@@ -1,0 +1,12 @@
+[[items]]
+name = "Open GitHub"
+type = "url"
+keywords = ["git", "code"]
+[items.payload]
+url = "https://github.com"
+[[items]]
+name = "linux"
+type = "snippet"
+keywords = ["linux", "command"]
+[items.payload]
+url = "https://linuxcommand.com"
