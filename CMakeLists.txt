@@ -27,6 +27,7 @@ target_sources(SurfPanel
   src/main.cpp
   src/mainwindow.cpp
   src/config.cpp
+  src/search_engine.cpp
 )
 
 target_link_libraries(SurfPanel PRIVATE Qt6::Widgets toml11::toml11)

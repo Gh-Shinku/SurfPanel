@@ -6,10 +6,10 @@ keywords = ["git", "code"]
 url = "https://github.com"
 [[items]]
 name = "linux"
-type = "snippet"
+type = "url"
 keywords = ["linux", "command"]
 [items.payload]
-snippet = "https://linuxcommand.com"
+url = "https://linuxcommand.com"
 [[items]]
 name = "翻译"
 type = "snippet"
