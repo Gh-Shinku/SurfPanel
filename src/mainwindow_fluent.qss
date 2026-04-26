@@ -1,0 +1,58 @@
+QMainWindow {
+  background: transparent;
+  font-family: "Segoe UI";
+}
+
+#panel {
+  background: rgba(243, 247, 252, 230);
+  border: 1px solid rgba(255, 255, 255, 190);
+  border-radius: 18px;
+}
+
+QLineEdit#searchInput {
+  background: rgba(255, 255, 255, 220);
+  color: #0f172a;
+  border: 1px solid rgba(30, 41, 59, 35);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 15px;
+  selection-background-color: #2563eb;
+  selection-color: #ffffff;
+}
+
+QLineEdit#searchInput:focus {
+  border: 1px solid #3b82f6;
+  background: rgba(255, 255, 255, 240);
+}
+
+QLineEdit#searchInput::placeholder {
+  color: #64748b;
+}
+
+QListView#resultsList {
+  background: transparent;
+  outline: none;
+  border: 0;
+  color: #0f172a;
+  padding: 2px;
+}
+
+QScrollBar:vertical {
+  background: transparent;
+  width: 8px;
+  margin: 4px 0 4px 0;
+}
+
+QScrollBar::handle:vertical {
+  background: rgba(100, 116, 139, 120);
+  border-radius: 4px;
+  min-height: 20px;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+  background: transparent;
+  border: none;
+}

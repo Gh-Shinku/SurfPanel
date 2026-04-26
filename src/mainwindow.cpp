@@ -8,12 +8,14 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QEvent>
+#include <QFile>
 #include <QFrame>
 #include <QGuiApplication>
-#include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLineEdit>
 #include <QListView>
 #include <QPainter>
+#include <QPen>
 #include <QScreen>
 #include <QShortcut>
 #include <QStyleOptionViewItem>
@@ -105,8 +107,11 @@ public:
     const QRect rowRect = option.rect.adjusted(8, 4, -8, -4);
     const bool selected = (option.state & QStyle::State_Selected) != 0;
 
-    const QColor rowBg = selected ? QColor("#1f2937") : QColor("#0f172a");
-    painter->setPen(Qt::NoPen);
+    const QColor rowBg =
+        selected ? QColor("#dbeafe") : QColor(255, 255, 255, 195);
+    const QColor rowBorder =
+        selected ? QColor("#60a5fa") : QColor(148, 163, 184, 75);
+    painter->setPen(QPen(rowBorder, 1));
     painter->setBrush(rowBg);
     painter->drawRoundedRect(rowRect, 8, 8);
 
@@ -116,8 +121,8 @@ public:
     const bool isUrl = typeRaw.compare("url", Qt::CaseInsensitive) == 0;
     const QString typeText = isUrl ? "URL" : "SNIPPET";
 
-    const QColor tagBg = isUrl ? QColor("#1d4ed8") : QColor("#047857");
-    const QColor tagTextColor("#e2e8f0");
+    const QColor tagBg = isUrl ? QColor("#2563eb") : QColor("#0f766e");
+    const QColor tagTextColor("#f8fafc");
 
     QFont nameFont = option.font;
     nameFont.setPointSizeF(11.5);
@@ -149,7 +154,7 @@ public:
 
     const QRect nameRect = rowRect.adjusted(14, 0, -tagWidth - 24, 0);
     painter->setFont(nameFont);
-    painter->setPen(QColor("#f8fafc"));
+    painter->setPen(QColor("#0f172a"));
     painter->drawText(
         nameRect, Qt::AlignVCenter | Qt::AlignLeft,
         nameMetrics.elidedText(name, Qt::ElideRight, nameRect.width()));
@@ -171,6 +176,26 @@ std::optional<fs::path> FindConfigPath() {
   for (const auto &candidate : candidates) {
     std::error_code ec;
     if (fs::exists(candidate, ec)) {
+      return candidate;
+    }
+  }
+
+  return std::nullopt;
+}
+
+std::optional<QString> FindStylesheetPath() {
+  const QString appDir = QCoreApplication::applicationDirPath();
+  const std::vector<QString> candidates = {
+      "src/mainwindow_fluent.qss",
+      "../src/mainwindow_fluent.qss",
+      "../../src/mainwindow_fluent.qss",
+      appDir + "/mainwindow_fluent.qss",
+      appDir + "/../src/mainwindow_fluent.qss",
+      appDir + "/../../src/mainwindow_fluent.qss",
+  };
+
+  for (const auto &candidate : candidates) {
+    if (QFile::exists(candidate)) {
       return candidate;
     }
   }
@@ -215,6 +240,30 @@ bool MainWindow::event(QEvent *event) {
   return QMainWindow::event(event);
 }
 
+bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
+  if ((watched == input_ || watched == resultsView_) &&
+      event->type() == QEvent::KeyPress) {
+    auto *keyEvent = static_cast<QKeyEvent *>(event);
+
+    if (keyEvent->key() == Qt::Key_Down) {
+      moveResultSelection(1);
+      return true;
+    }
+
+    if (keyEvent->key() == Qt::Key_Up) {
+      moveResultSelection(-1);
+      return true;
+    }
+
+    if (keyEvent->key() == Qt::Key_Escape && isVisible()) {
+      hide();
+      return true;
+    }
+  }
+
+  return QMainWindow::eventFilter(watched, event);
+}
+
 #ifdef Q_OS_WIN
 bool MainWindow::nativeEvent(const QByteArray &eventType, void *message,
                              qintptr *result) {
@@ -242,7 +291,7 @@ void MainWindow::setupWindow() {
 void MainWindow::setupUi() {
   QWidget *root = new QWidget(this);
   QVBoxLayout *rootLayout = new QVBoxLayout(root);
-  rootLayout->setContentsMargins(18, 18, 18, 18);
+  rootLayout->setContentsMargins(0, 0, 0, 0);
 
   QFrame *panel = new QFrame(root);
   panel->setObjectName("panel");
@@ -276,33 +325,29 @@ void MainWindow::setupUi() {
 
   rootLayout->addWidget(panel);
   setCentralWidget(root);
+  applyStylesheet();
+}
 
-  setStyleSheet("QMainWindow { background: transparent; }"
-                "#panel {"
-                "  background: #0b1220;"
-                "  border: 1px solid #1e293b;"
-                "  border-radius: 14px;"
-                "}"
-                "QLineEdit#searchInput {"
-                "  background: #111827;"
-                "  color: #f8fafc;"
-                "  border: 1px solid #334155;"
-                "  border-radius: 10px;"
-                "  padding: 10px 12px;"
-                "  font-size: 14px;"
-                "}"
-                "QLineEdit#searchInput:focus {"
-                "  border: 1px solid #38bdf8;"
-                "}"
-                "QListView#resultsList {"
-                "  background: transparent;"
-                "  outline: 0;"
-                "  border: 0;"
-                "  color: #f8fafc;"
-                "}");
+void MainWindow::applyStylesheet() {
+  const auto stylePath = FindStylesheetPath();
+  if (!stylePath.has_value()) {
+    qWarning() << "Fluent stylesheet not found; using default style.";
+    return;
+  }
+
+  QFile styleFile(*stylePath);
+  if (!styleFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    qWarning() << "Failed to open stylesheet:" << *stylePath;
+    return;
+  }
+
+  setStyleSheet(QString::fromUtf8(styleFile.readAll()));
 }
 
 void MainWindow::setupConnections() {
+  input_->installEventFilter(this);
+  resultsView_->installEventFilter(this);
+
   connect(input_, &QLineEdit::textChanged, this,
           &MainWindow::onQueryTextChanged);
   connect(input_, &QLineEdit::returnPressed, this,
@@ -310,6 +355,14 @@ void MainWindow::setupConnections() {
   connect(resultsView_, &QListView::activated, this,
           &MainWindow::activateIndex);
   connect(resultsView_, &QListView::clicked, this, &MainWindow::activateIndex);
+
+  QShortcut *escapeShortcut = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+  escapeShortcut->setContext(Qt::ApplicationShortcut);
+  connect(escapeShortcut, &QShortcut::activated, this, [this]() {
+    if (isVisible()) {
+      hide();
+    }
+  });
 }
 
 void MainWindow::setupHotkeyPlaceholder(bool enableHotkey) {
@@ -375,6 +428,32 @@ void MainWindow::toggleVisibilityFromHotkey() {
   activateWindow();
   input_->setFocus();
   input_->selectAll();
+}
+
+void MainWindow::moveResultSelection(int delta) {
+  const int count = resultsModel_->rowCount();
+  if (count <= 0) {
+    return;
+  }
+
+  int row = 0;
+  const QModelIndex current = resultsView_->currentIndex();
+  if (current.isValid()) {
+    row = current.row() + delta;
+  } else if (delta < 0) {
+    row = count - 1;
+  }
+
+  if (row < 0) {
+    row = 0;
+  }
+  if (row >= count) {
+    row = count - 1;
+  }
+
+  const QModelIndex next = resultsModel_->index(row, 0);
+  resultsView_->setCurrentIndex(next);
+  resultsView_->scrollTo(next, QAbstractItemView::PositionAtCenter);
 }
 
 void MainWindow::onQueryTextChanged(const QString &text) {

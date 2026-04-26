@@ -28,6 +28,7 @@ public:
 
 protected:
   bool event(QEvent *event) override;
+  bool eventFilter(QObject *watched, QEvent *event) override;
 
 #ifdef Q_OS_WIN
   bool nativeEvent(const QByteArray &eventType, void *message,
@@ -37,11 +38,13 @@ protected:
 private:
   void setupWindow();
   void setupUi();
+  void applyStylesheet();
   void setupConnections();
   void setupHotkeyPlaceholder(bool enableHotkey);
   void loadBackendItems();
   void centerOnScreen();
   void toggleVisibilityFromHotkey();
+  void moveResultSelection(int delta);
   void onQueryTextChanged(const QString &text);
   void activateCurrentResult();
   void activateIndex(const QModelIndex &index);

@@ -1,18 +1,129 @@
+# --- DEVELOPER TOOLS (URLs) ---
+
 [[items]]
-name = "Open GitHub"
+name = "Stack Overflow"
 type = "url"
-keywords = ["git", "code"]
+keywords = ["debug", "error", "help", "community"]
 [items.payload]
-url = "https://github.com"
+url = "https://stackoverflow.com"
+
 [[items]]
-name = "linux"
+name = "CppReference"
 type = "url"
-keywords = ["linux", "command"]
+keywords = ["std", "cpp", "c++", "documentation", "stl"]
 [items.payload]
-url = "https://linuxcommand.com"
+url = "https://en.cppreference.com/w/"
+
 [[items]]
-name = "翻译"
+name = "Qt Documentation"
+type = "url"
+keywords = ["qt6", "qml", "widget", "framework"]
+[items.payload]
+url = "https://doc.qt.io/"
+
+[[items]]
+name = "Rust Docs"
+type = "url"
+keywords = ["rust", "cargo", "doc"]
+[items.payload]
+url = "https://docs.rs"
+
+[[items]]
+name = "MDN Web Docs"
+type = "url"
+keywords = ["javascript", "js", "html", "css", "frontend"]
+[items.payload]
+url = "https://developer.mozilla.org"
+
+
+# --- AI & SNIPPETS (Productivity) ---
+
+[[items]]
+name = "AI: Refactor Code"
 type = "snippet"
-keywords = ["English", "英语"]
+keywords = ["clean", "optimize", "rewrite"]
 [items.payload]
-snippet = "你是一位专业的翻译家，请你将下述英文翻译成中文。"
+snippet = "Please refactor the following code for better readability and performance, maintaining the same logic:"
+
+[[items]]
+name = "AI: Fix Grammar"
+type = "snippet"
+keywords = ["english", "correct", "writing", "polish"]
+[items.payload]
+snippet = "Please correct the grammar and spelling of the following text to make it sound more professional and natural:"
+
+[[items]]
+name = "Git: Commit Message Template"
+type = "snippet"
+keywords = ["git", "feat", "fix", "chore"]
+[items.payload]
+snippet = "feat: <description>\n\nDetailed changes:\n- \n- \n"
+
+[[items]]
+name = "C++: Main Boilerplate"
+type = "snippet"
+keywords = ["cpp", "start", "template"]
+[items.payload]
+snippet = "#include <iostream>\n\nint main(int argc, char* argv[]) {\n    \n    return 0;\n}"
+
+
+# --- CHINESE & MULTILINGUAL (UTF-8 Testing) ---
+
+[[items]]
+name = "哔哩哔哩 (Bilibili)"
+type = "url"
+keywords = ["video", "bili", "动画", "视频"]
+[items.payload]
+url = "https://www.bilibili.com"
+
+[[items]]
+name = "知乎"
+type = "url"
+keywords = ["zhihu", "question", "社区", "问答"]
+[items.payload]
+url = "https://www.zhihu.com"
+
+[[items]]
+name = "翻译: 中进英"
+type = "snippet"
+keywords = ["translate", "chinese", "english", "翻译"]
+[items.payload]
+snippet = "请将以下中文段落翻译成地道的英文："
+
+[[items]]
+name = "百度搜索"
+type = "url"
+keywords = ["baidu", "search", "搜索", "引擎"]
+[items.payload]
+url = "https://www.baidu.com"
+
+
+# --- SYSTEM & UTILITIES ---
+
+[[items]]
+name = "Localhost:8080"
+type = "url"
+keywords = ["dev", "server", "local", "web"]
+[items.payload]
+url = "http://localhost:8080"
+
+[[items]]
+name = "Gmail"
+type = "url"
+keywords = ["mail", "google", "email", "inbox"]
+[items.payload]
+url = "https://mail.google.com"
+
+[[items]]
+name = "DeepL Translator"
+type = "url"
+keywords = ["translate", "fanyi", "german", "japanese"]
+[items.payload]
+url = "https://www.deepl.com/translator"
+
+[[items]]
+name = "JSON Formatter"
+type = "url"
+keywords = ["json", "tool", "format", "parse"]
+[items.payload]
+url = "https://jsonlint.com/"
