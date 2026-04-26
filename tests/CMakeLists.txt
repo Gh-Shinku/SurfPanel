@@ -12,5 +12,13 @@ add_executable(test_search_engine
 target_include_directories(test_search_engine PRIVATE ../src)
 target_link_libraries(test_search_engine PRIVATE Qt6::Core)
 
+add_executable(test_action_manager
+	test_action_manager.cpp
+	../src/action_manager.cpp
+)
+target_include_directories(test_action_manager PRIVATE ../src)
+target_link_libraries(test_action_manager PRIVATE Qt6::Core Qt6::Gui)
+
 add_test(NAME test_config COMMAND test_config)
 add_test(NAME test_search_engine COMMAND test_search_engine)
+add_test(NAME test_action_manager COMMAND test_action_manager)

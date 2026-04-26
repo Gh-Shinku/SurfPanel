@@ -23,6 +23,7 @@ add_executable(SurfPanel)
 
 target_sources(SurfPanel
   PRIVATE
+  src/action_manager.cpp
   src/main.cpp
   src/mainwindow.cpp
   src/config.cpp
