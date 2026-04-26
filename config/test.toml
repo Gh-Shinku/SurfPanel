@@ -9,4 +9,10 @@ name = "linux"
 type = "snippet"
 keywords = ["linux", "command"]
 [items.payload]
-url = "https://linuxcommand.com"
+snippet = "https://linuxcommand.com"
+[[items]]
+name = "翻译"
+type = "snippet"
+keywords = ["English", "英语"]
+[items.payload]
+snippet = "你是一位专业的翻译家，请你将下述英文翻译成中文。"
