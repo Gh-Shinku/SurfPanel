@@ -1,0 +1,8 @@
+<RCC>
+  <qresource prefix="/icons">
+    <file alias="SurfPanel.ico">../assets/SurfPanel.ico</file>
+  </qresource>
+  <qresource prefix="/styles">
+    <file alias="mainwindow_fluent.qss">mainwindow_fluent.qss</file>
+  </qresource>
+</RCC>

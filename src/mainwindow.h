@@ -10,10 +10,13 @@
 
 class QByteArray;
 class QEvent;
+class QAction;
 class QLineEdit;
 class QListView;
+class QMenu;
 class QModelIndex;
 class QShortcut;
+class QSystemTrayIcon;
 class SearchResultItemDelegate;
 class SearchResultListModel;
 
@@ -39,9 +42,12 @@ private:
   void setupWindow();
   void setupUi();
   void applyStylesheet();
+  void setupTrayIcon();
   void setupConnections();
   void setupHotkeyPlaceholder(bool enableHotkey);
   void loadBackendItems();
+  void showPanel();
+  void openConfigDirectory();
   void centerOnScreen();
   void toggleVisibilityFromHotkey();
   void moveResultSelection(int delta);
@@ -54,6 +60,12 @@ private:
   QListView *resultsView_;
   SearchResultListModel *resultsModel_;
   SearchResultItemDelegate *resultsDelegate_;
+
+  QSystemTrayIcon *trayIcon_;
+  QMenu *trayMenu_;
+  QAction *showPanelAction_;
+  QAction *showConfigDirAction_;
+  QAction *exitAction_;
 
   SearchEngine searchEngine_;
   ActionManager actionManager_;

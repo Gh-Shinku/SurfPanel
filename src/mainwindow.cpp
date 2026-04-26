@@ -4,23 +4,30 @@
 
 #include <QAbstractItemView>
 #include <QAbstractListModel>
+#include <QAction>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDebug>
+#include <QDesktopServices>
 #include <QEvent>
 #include <QFile>
 #include <QFrame>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QListView>
+#include <QMenu>
 #include <QPainter>
 #include <QPen>
+#include <QProcess>
 #include <QScreen>
 #include <QShortcut>
 #include <QStyleOptionViewItem>
 #include <QStyledItemDelegate>
+#include <QSystemTrayIcon>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -183,6 +190,28 @@ std::optional<fs::path> FindConfigPath() {
   return std::nullopt;
 }
 
+std::optional<fs::path> FindConfigDirectoryPath() {
+  if (const auto filePath = FindConfigPath(); filePath.has_value()) {
+    return filePath->parent_path();
+  }
+
+  const std::vector<fs::path> candidates = {
+      fs::path("config"),
+      fs::path("..") / "config",
+      fs::path(QCoreApplication::applicationDirPath().toStdString()) / ".." /
+          "config",
+  };
+
+  for (const auto &candidate : candidates) {
+    std::error_code ec;
+    if (fs::exists(candidate, ec) && fs::is_directory(candidate, ec)) {
+      return candidate;
+    }
+  }
+
+  return std::nullopt;
+}
+
 std::optional<QString> FindStylesheetPath() {
   const QString appDir = QCoreApplication::applicationDirPath();
   const std::vector<QString> candidates = {
@@ -207,13 +236,16 @@ std::optional<QString> FindStylesheetPath() {
 
 MainWindow::MainWindow(QWidget *parent, bool enableHotkey)
     : QMainWindow(parent), input_(nullptr), resultsView_(nullptr),
-      resultsModel_(nullptr), resultsDelegate_(nullptr),
+      resultsModel_(nullptr), resultsDelegate_(nullptr), trayIcon_(nullptr),
+      trayMenu_(nullptr), showPanelAction_(nullptr),
+      showConfigDirAction_(nullptr), exitAction_(nullptr),
       globalHotkeyRegistered_(false), hotkeyId_(1), fallbackShortcut_(nullptr) {
   RegisterDefaultActions(&actionManager_);
 
   setupWindow();
   setupUi();
   setupConnections();
+  setupTrayIcon();
   loadBackendItems();
   setupHotkeyPlaceholder(enableHotkey);
 
@@ -282,6 +314,11 @@ bool MainWindow::nativeEvent(const QByteArray &eventType, void *message,
 #endif
 
 void MainWindow::setupWindow() {
+  const QIcon appIcon(":/icons/SurfPanel.ico");
+  if (!appIcon.isNull()) {
+    setWindowIcon(appIcon);
+  }
+
   setWindowTitle("SurfPanel");
   setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
   setAttribute(Qt::WA_TranslucentBackground, true);
@@ -329,6 +366,12 @@ void MainWindow::setupUi() {
 }
 
 void MainWindow::applyStylesheet() {
+  QFile embeddedStyleFile(":/styles/mainwindow_fluent.qss");
+  if (embeddedStyleFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    setStyleSheet(QString::fromUtf8(embeddedStyleFile.readAll()));
+    return;
+  }
+
   const auto stylePath = FindStylesheetPath();
   if (!stylePath.has_value()) {
     qWarning() << "Fluent stylesheet not found; using default style.";
@@ -342,6 +385,44 @@ void MainWindow::applyStylesheet() {
   }
 
   setStyleSheet(QString::fromUtf8(styleFile.readAll()));
+}
+
+void MainWindow::setupTrayIcon() {
+  if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+    qWarning() << "System tray is unavailable on this platform/session.";
+    return;
+  }
+
+  trayMenu_ = new QMenu(this);
+  showPanelAction_ = trayMenu_->addAction("Show Panel");
+  showConfigDirAction_ = trayMenu_->addAction("Show Config File Dir");
+  trayMenu_->addSeparator();
+  exitAction_ = trayMenu_->addAction("Exit");
+
+  connect(showPanelAction_, &QAction::triggered, this, &MainWindow::showPanel);
+  connect(showConfigDirAction_, &QAction::triggered, this,
+          &MainWindow::openConfigDirectory);
+  connect(exitAction_, &QAction::triggered, qApp, &QApplication::quit);
+
+  QIcon trayIcon(":/icons/SurfPanel.ico");
+  if (trayIcon.isNull()) {
+    trayIcon = windowIcon();
+  }
+
+  trayIcon_ = new QSystemTrayIcon(this);
+  trayIcon_->setIcon(trayIcon);
+  trayIcon_->setToolTip("SurfPanel");
+  trayIcon_->setContextMenu(trayMenu_);
+
+  connect(trayIcon_, &QSystemTrayIcon::activated, this,
+          [this](QSystemTrayIcon::ActivationReason reason) {
+            if (reason == QSystemTrayIcon::Trigger ||
+                reason == QSystemTrayIcon::DoubleClick) {
+              toggleVisibilityFromHotkey();
+            }
+          });
+
+  trayIcon_->show();
 }
 
 void MainWindow::setupConnections() {
@@ -405,6 +486,35 @@ void MainWindow::loadBackendItems() {
   }
 }
 
+void MainWindow::showPanel() {
+  centerOnScreen();
+  show();
+  raise();
+  activateWindow();
+  input_->setFocus();
+  input_->selectAll();
+}
+
+void MainWindow::openConfigDirectory() {
+  const auto configDir = FindConfigDirectoryPath();
+  if (!configDir.has_value()) {
+    qWarning() << "Unable to locate config directory.";
+    return;
+  }
+
+  const fs::path absolutePath = fs::absolute(*configDir);
+  const QString dirPath = QString::fromStdString(absolutePath.string());
+
+#ifdef Q_OS_WIN
+  const bool detached = QProcess::startDetached("explorer.exe", {dirPath});
+  if (!detached) {
+    qWarning() << "Failed to open config directory with explorer:" << dirPath;
+  }
+#else
+  QDesktopServices::openUrl(QUrl::fromLocalFile(dirPath));
+#endif
+}
+
 void MainWindow::centerOnScreen() {
   QScreen *screen = QGuiApplication::primaryScreen();
   if (screen == nullptr) {
@@ -422,12 +532,7 @@ void MainWindow::toggleVisibilityFromHotkey() {
     return;
   }
 
-  centerOnScreen();
-  show();
-  raise();
-  activateWindow();
-  input_->setFocus();
-  input_->selectAll();
+  showPanel();
 }
 
 void MainWindow::moveResultSelection(int delta) {

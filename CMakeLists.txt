@@ -26,6 +26,7 @@ target_sources(SurfPanel
   src/action_manager.cpp
   src/main.cpp
   src/mainwindow.cpp
+  src/resources.qrc
   src/config.cpp
   src/search_engine.cpp
 )
