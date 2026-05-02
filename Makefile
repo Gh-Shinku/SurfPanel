@@ -1,7 +1,10 @@
-.PHONY: configure build test clean
+.PHONY: cg-debug cg-release build test clean
 
-configure:
+cg-debug:
 	cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Debug
+
+cg-release:
+	cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release
 
 build:
 	cmake --build build --verbose

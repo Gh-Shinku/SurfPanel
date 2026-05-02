@@ -19,7 +19,7 @@ find_package(Qt6 COMPONENTS Core Widgets REQUIRED)
 
 add_subdirectory(third-party/toml11)
 
-add_executable(SurfPanel)
+add_executable(SurfPanel WIN32)
 
 target_sources(SurfPanel
   PRIVATE
