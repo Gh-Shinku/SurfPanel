@@ -1,0 +1,48 @@
+[[items]]
+keywords = ["debug", "error", "help", "community"]
+type = "url"
+name = "Stack Overflow"
+
+[items.payload]
+url = "https://stackoverflow.com"
+
+[[items]]
+keywords = ["git", "code", "repo"]
+type = "url"
+name = "GitHub"
+
+[items.payload]
+url = "https://github.com"
+
+[[items]]
+keywords = ["cpp", "stl", "docs"]
+type = "url"
+name = "CppReference"
+
+[items.payload]
+url = "https://en.cppreference.com/w/"
+
+[[items]]
+keywords = ["qt6", "widgets", "docs"]
+type = "url"
+name = "Qt Documentation"
+
+[items.payload]
+url = "https://doc.qt.io/"
+
+[[items]]
+keywords = ["web", "html", "css", "js"]
+type = "url"
+name = "MDN Web Docs"
+
+[items.payload]
+url = "https://developer.mozilla.org"
+
+[[items]]
+keywords = ["git", "commit", "template"]
+type = "snippet"
+name = "Git Commit Template"
+
+[items.payload]
+snippet = "feat: <description>\n\nDetailed changes:\n- \n- \n"
+

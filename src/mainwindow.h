@@ -19,6 +19,7 @@ class QShortcut;
 class QSystemTrayIcon;
 class SearchResultItemDelegate;
 class SearchResultListModel;
+struct ConfigLoadResult;
 
 class MainWindow : public QMainWindow {
   Q_OBJECT
@@ -45,9 +46,10 @@ private:
   void setupTrayIcon();
   void setupConnections();
   void setupHotkeyPlaceholder(bool enableHotkey);
-  void loadBackendItems();
+  ConfigLoadResult loadBackendItems();
   void showPanel();
   void openConfigDirectory();
+  void reloadConfig();
   void centerOnScreen();
   void toggleVisibilityFromHotkey();
   void moveResultSelection(int delta);
@@ -65,6 +67,7 @@ private:
   QMenu *trayMenu_;
   QAction *showPanelAction_;
   QAction *showConfigDirAction_;
+  QAction *reloadConfigAction_;
   QAction *exitAction_;
 
   SearchEngine searchEngine_;

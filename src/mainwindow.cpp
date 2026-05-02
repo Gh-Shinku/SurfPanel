@@ -172,46 +172,6 @@ public:
 
 namespace {
 
-std::optional<fs::path> FindConfigPath() {
-  std::vector<fs::path> candidates = {
-      fs::path("config") / "test.toml",
-      fs::path("..") / "config" / "test.toml",
-      fs::path(QCoreApplication::applicationDirPath().toStdString()) / ".." /
-          "config" / "test.toml",
-  };
-
-  for (const auto &candidate : candidates) {
-    std::error_code ec;
-    if (fs::exists(candidate, ec)) {
-      return candidate;
-    }
-  }
-
-  return std::nullopt;
-}
-
-std::optional<fs::path> FindConfigDirectoryPath() {
-  if (const auto filePath = FindConfigPath(); filePath.has_value()) {
-    return filePath->parent_path();
-  }
-
-  const std::vector<fs::path> candidates = {
-      fs::path("config"),
-      fs::path("..") / "config",
-      fs::path(QCoreApplication::applicationDirPath().toStdString()) / ".." /
-          "config",
-  };
-
-  for (const auto &candidate : candidates) {
-    std::error_code ec;
-    if (fs::exists(candidate, ec) && fs::is_directory(candidate, ec)) {
-      return candidate;
-    }
-  }
-
-  return std::nullopt;
-}
-
 std::optional<QString> FindStylesheetPath() {
   const QString appDir = QCoreApplication::applicationDirPath();
   const std::vector<QString> candidates = {
@@ -238,8 +198,9 @@ MainWindow::MainWindow(QWidget *parent, bool enableHotkey)
     : QMainWindow(parent), input_(nullptr), resultsView_(nullptr),
       resultsModel_(nullptr), resultsDelegate_(nullptr), trayIcon_(nullptr),
       trayMenu_(nullptr), showPanelAction_(nullptr),
-      showConfigDirAction_(nullptr), exitAction_(nullptr),
-      globalHotkeyRegistered_(false), hotkeyId_(1), fallbackShortcut_(nullptr) {
+      showConfigDirAction_(nullptr), reloadConfigAction_(nullptr),
+      exitAction_(nullptr), globalHotkeyRegistered_(false), hotkeyId_(1),
+      fallbackShortcut_(nullptr) {
   RegisterDefaultActions(&actionManager_);
 
   setupWindow();
@@ -396,12 +357,15 @@ void MainWindow::setupTrayIcon() {
   trayMenu_ = new QMenu(this);
   showPanelAction_ = trayMenu_->addAction("Show Panel");
   showConfigDirAction_ = trayMenu_->addAction("Show Config File Dir");
+  reloadConfigAction_ = trayMenu_->addAction("Reload Config");
   trayMenu_->addSeparator();
   exitAction_ = trayMenu_->addAction("Exit");
 
   connect(showPanelAction_, &QAction::triggered, this, &MainWindow::showPanel);
   connect(showConfigDirAction_, &QAction::triggered, this,
           &MainWindow::openConfigDirectory);
+  connect(reloadConfigAction_, &QAction::triggered, this,
+          &MainWindow::reloadConfig);
   connect(exitAction_, &QAction::triggered, qApp, &QApplication::quit);
 
   QIcon trayIcon(":/icons/SurfPanel.ico");
@@ -470,20 +434,26 @@ void MainWindow::setupHotkeyPlaceholder(bool enableHotkey) {
   }
 }
 
-void MainWindow::loadBackendItems() {
-  const auto configPath = FindConfigPath();
-  if (!configPath.has_value()) {
+ConfigLoadResult MainWindow::loadBackendItems() {
+  const auto configRoot = FindConfigRoot();
+  if (!configRoot.has_value()) {
     searchEngine_.setItems({});
-    return;
+    ConfigLoadResult result;
+    result.ok = false;
+    result.message = "Config directory not found.";
+    return result;
   }
 
-  try {
-    const auto items = loadStringItems(*configPath);
-    searchEngine_.setItems(items);
-  } catch (const std::exception &e) {
-    qWarning() << "Failed to load config for UI backend:" << e.what();
-    searchEngine_.setItems({});
+  auto result = LoadConfigWithFallback(*configRoot);
+  searchEngine_.setItems(result.items);
+  onQueryTextChanged(input_->text());
+
+  if (!result.ok || result.usedFallback) {
+    qWarning() << "Config load warning:"
+               << QString::fromStdString(result.message);
   }
+
+  return result;
 }
 
 void MainWindow::showPanel() {
@@ -495,8 +465,20 @@ void MainWindow::showPanel() {
   input_->selectAll();
 }
 
+void MainWindow::reloadConfig() {
+  const auto result = loadBackendItems();
+  if (trayIcon_ == nullptr || result.message.empty()) {
+    return;
+  }
+
+  const QString message = QString::fromStdString(result.message);
+  const QSystemTrayIcon::MessageIcon icon =
+      result.ok ? QSystemTrayIcon::Information : QSystemTrayIcon::Warning;
+  trayIcon_->showMessage("SurfPanel Config", message, icon, 3500);
+}
+
 void MainWindow::openConfigDirectory() {
-  const auto configDir = FindConfigDirectoryPath();
+  const auto configDir = FindConfigRoot();
   if (!configDir.has_value()) {
     qWarning() << "Unable to locate config directory.";
     return;

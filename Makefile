@@ -1,16 +1,16 @@
 .PHONY: cg-debug cg-release build test clean
 
 cg-debug:
-	cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Debug
+	@cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Debug
 
 cg-release:
-	cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release
+	@cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release
 
 build:
-	cmake --build build --verbose
+	@cmake --build build --verbose
 
 test:
-	@ctest --output-on-failure
+	@ctest --test-dir build --output-on-failure
 
 clean:
-	rm -rf build
+	@rm -rf build
