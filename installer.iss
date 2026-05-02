@@ -54,8 +54,10 @@ Name: "{app}\config"
 ; Main executable
 Source: "{#MyBuildDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
-; Qt and runtime DLLs deployed beside the executable
-Source: "{#MyBuildDir}\*.dll"; DestDir: "{app}"; Flags: ignoreversion
+; Qt DLLs required by SurfPanel (Widgets app)
+Source: "{#MyBuildDir}\Qt6Core.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#MyBuildDir}\Qt6Gui.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#MyBuildDir}\Qt6Widgets.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyBuildDir}\D3Dcompiler_47.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#MyBuildDir}\dxcompiler.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#MyBuildDir}\dxil.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
@@ -85,14 +87,10 @@ Source: "{#MyMingwBin}\libicudt78.dll"; DestDir: "{app}"; Flags: ignoreversion s
 Source: "{#MyMingwBin}\libpcre2-8-0.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#MyMingwBin}\libiconv-2.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
-; Qt plugin directories produced by windeployqt
-Source: "{#MyBuildDir}\platforms\*"; DestDir: "{app}\platforms"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#MyBuildDir}\styles\*"; DestDir: "{app}\styles"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-Source: "{#MyBuildDir}\imageformats\*"; DestDir: "{app}\imageformats"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-Source: "{#MyBuildDir}\generic\*"; DestDir: "{app}\generic"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-Source: "{#MyBuildDir}\networkinformation\*"; DestDir: "{app}\networkinformation"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-Source: "{#MyBuildDir}\tls\*"; DestDir: "{app}\tls"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-Source: "{#MyBuildDir}\translations\*"; DestDir: "{app}\translations"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+; Minimal Qt plugin set for Qt6 Widgets
+Source: "{#MyBuildDir}\platforms\qwindows.dll"; DestDir: "{app}\platforms"; Flags: ignoreversion
+Source: "{#MyBuildDir}\imageformats\qico.dll"; DestDir: "{app}\imageformats"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#MyBuildDir}\styles\qmodernwindowsstyle.dll"; DestDir: "{app}\styles"; Flags: ignoreversion skipifsourcedoesntexist
 
 ; Ship initial config files with the app
 Source: "{#MyConfigDir}\*"; DestDir: "{app}\config"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist

@@ -1,9 +1,5 @@
 # SurfPanel
 
-## My Expectation
-
-SurfPanel is designed as a fast launcher and productivity panel whose behavior is fully driven by a configuration file, allowing users to tune search scope, snippet behavior, and shortcuts without recompiling the program. The application should support searching bookmarks from a specified browser so users can quickly reach frequently visited pages, and it should also provide customizable snippets that can be injected into the current input interface while being copied to the clipboard for immediate reuse. To keep interaction seamless, SurfPanel should be able to be invoked and hidden through a user-defined keyboard shortcut or hotkey, making it available instantly when needed and unobtrusive otherwise. The overall architecture is expected to be plugin based, so features such as browser integration, snippet providers, and future extensions can be developed, maintained, and scaled as independent modules.
-
 ## Configuration
 
 SurfPanel uses a component-based configuration system inspired by RIME:
@@ -98,3 +94,10 @@ and user overrides without restarting the app.
 If config loading fails, SurfPanel falls back to `cache/last_good.toml`, then
 to `defaults/items.toml`, and finally to `test.toml` if present. This keeps the
 app usable even if a module has syntax errors.
+
+## Open Source Notice
+
+SurfPanel uses the following open-source libraries:
+
+- Qt6 for the application framework and UI.
+- [toml11](https://github.com/ToruNiina/toml11) for TOML parsing and configuration loading.
