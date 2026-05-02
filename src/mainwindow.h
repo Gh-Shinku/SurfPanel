@@ -50,6 +50,9 @@ private:
   void showPanel();
   void openConfigDirectory();
   void reloadConfig();
+  bool isAutoStartEnabled() const;
+  void setAutoStartEnabled(bool enabled);
+  void syncAutoStartAction();
   void centerOnScreen();
   void toggleVisibilityFromHotkey();
   void moveResultSelection(int delta);
@@ -68,6 +71,7 @@ private:
   QAction *showPanelAction_;
   QAction *showConfigDirAction_;
   QAction *reloadConfigAction_;
+  QAction *autoStartAction_;
   QAction *exitAction_;
 
   SearchEngine searchEngine_;

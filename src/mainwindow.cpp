@@ -9,6 +9,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDesktopServices>
+#include <QDir>
 #include <QEvent>
 #include <QFile>
 #include <QFrame>
@@ -22,7 +23,9 @@
 #include <QPen>
 #include <QProcess>
 #include <QScreen>
+#include <QSettings>
 #include <QShortcut>
+#include <QSignalBlocker>
 #include <QStyleOptionViewItem>
 #include <QStyledItemDelegate>
 #include <QSystemTrayIcon>
@@ -192,6 +195,33 @@ std::optional<QString> FindStylesheetPath() {
   return std::nullopt;
 }
 
+#ifdef Q_OS_WIN
+QString StartupValueName() {
+  const QString appName = QCoreApplication::applicationName();
+  return appName.isEmpty() ? QString("SurfPanel") : appName;
+}
+
+QSettings StartupSettings() {
+  return QSettings(
+      "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+      QSettings::NativeFormat);
+}
+
+QString StartupValueData() {
+  const QString exePath =
+      QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+  return QString("\"%1\"").arg(exePath);
+}
+
+QString NormalizeStartupValue(const QString &value) {
+  QString trimmed = value.trimmed();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.size() >= 2) {
+    trimmed = trimmed.mid(1, trimmed.size() - 2);
+  }
+  return QDir::toNativeSeparators(trimmed);
+}
+#endif
+
 } // namespace
 
 MainWindow::MainWindow(QWidget *parent, bool enableHotkey)
@@ -199,8 +229,8 @@ MainWindow::MainWindow(QWidget *parent, bool enableHotkey)
       resultsModel_(nullptr), resultsDelegate_(nullptr), trayIcon_(nullptr),
       trayMenu_(nullptr), showPanelAction_(nullptr),
       showConfigDirAction_(nullptr), reloadConfigAction_(nullptr),
-      exitAction_(nullptr), globalHotkeyRegistered_(false), hotkeyId_(1),
-      fallbackShortcut_(nullptr) {
+      autoStartAction_(nullptr), exitAction_(nullptr),
+      globalHotkeyRegistered_(false), hotkeyId_(1), fallbackShortcut_(nullptr) {
   RegisterDefaultActions(&actionManager_);
 
   setupWindow();
@@ -358,6 +388,8 @@ void MainWindow::setupTrayIcon() {
   showPanelAction_ = trayMenu_->addAction("Show Panel");
   showConfigDirAction_ = trayMenu_->addAction("Show Config File Dir");
   reloadConfigAction_ = trayMenu_->addAction("Reload Config");
+  autoStartAction_ = trayMenu_->addAction("Start with Windows");
+  autoStartAction_->setCheckable(true);
   trayMenu_->addSeparator();
   exitAction_ = trayMenu_->addAction("Exit");
 
@@ -366,6 +398,10 @@ void MainWindow::setupTrayIcon() {
           &MainWindow::openConfigDirectory);
   connect(reloadConfigAction_, &QAction::triggered, this,
           &MainWindow::reloadConfig);
+  connect(autoStartAction_, &QAction::toggled, this,
+          &MainWindow::setAutoStartEnabled);
+  connect(trayMenu_, &QMenu::aboutToShow, this,
+          &MainWindow::syncAutoStartAction);
   connect(exitAction_, &QAction::triggered, qApp, &QApplication::quit);
 
   QIcon trayIcon(":/icons/SurfPanel.ico");
@@ -377,6 +413,8 @@ void MainWindow::setupTrayIcon() {
   trayIcon_->setIcon(trayIcon);
   trayIcon_->setToolTip("SurfPanel");
   trayIcon_->setContextMenu(trayMenu_);
+
+  syncAutoStartAction();
 
   connect(trayIcon_, &QSystemTrayIcon::activated, this,
           [this](QSystemTrayIcon::ActivationReason reason) {
@@ -475,6 +513,58 @@ void MainWindow::reloadConfig() {
   const QSystemTrayIcon::MessageIcon icon =
       result.ok ? QSystemTrayIcon::Information : QSystemTrayIcon::Warning;
   trayIcon_->showMessage("SurfPanel Config", message, icon, 3500);
+}
+
+bool MainWindow::isAutoStartEnabled() const {
+#ifdef Q_OS_WIN
+  QSettings settings = StartupSettings();
+  const QString value = settings.value(StartupValueName()).toString();
+  if (value.isEmpty()) {
+    return false;
+  }
+
+  const QString normalized = NormalizeStartupValue(value);
+  const QString exePath =
+      QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+  return normalized.compare(exePath, Qt::CaseInsensitive) == 0;
+#else
+  return false;
+#endif
+}
+
+void MainWindow::setAutoStartEnabled(bool enabled) {
+#ifdef Q_OS_WIN
+  QSettings settings = StartupSettings();
+  const QString valueName = StartupValueName();
+  if (enabled) {
+    settings.setValue(valueName, StartupValueData());
+  } else {
+    settings.remove(valueName);
+  }
+  settings.sync();
+  if (settings.status() != QSettings::NoError) {
+    qWarning() << "Failed to update startup registry entry.";
+  }
+#endif
+
+  syncAutoStartAction();
+}
+
+void MainWindow::syncAutoStartAction() {
+  if (autoStartAction_ == nullptr) {
+    return;
+  }
+
+#ifdef Q_OS_WIN
+  const bool enabled = isAutoStartEnabled();
+  QSignalBlocker blocker(autoStartAction_);
+  autoStartAction_->setEnabled(true);
+  autoStartAction_->setChecked(enabled);
+#else
+  QSignalBlocker blocker(autoStartAction_);
+  autoStartAction_->setChecked(false);
+  autoStartAction_->setEnabled(false);
+#endif
 }
 
 void MainWindow::openConfigDirectory() {
