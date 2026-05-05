@@ -1,20 +1,4 @@
 [[items]]
-keywords = ["debug", "error", "help", "community"]
-type = "url"
-name = "Stack Overflow"
-
-[items.payload]
-url = "https://stackoverflow.com"
-
-[[items]]
-keywords = ["git", "code", "repo"]
-type = "url"
-name = "GitHub"
-
-[items.payload]
-url = "https://github.com"
-
-[[items]]
 keywords = ["cpp", "stl", "docs"]
 type = "url"
 name = "CppReference"
@@ -23,26 +7,42 @@ name = "CppReference"
 url = "https://en.cppreference.com/w/"
 
 [[items]]
-keywords = ["qt6", "widgets", "docs"]
-type = "url"
-name = "Qt Documentation"
-
-[items.payload]
-url = "https://doc.qt.io/"
-
-[[items]]
-keywords = ["web", "html", "css", "js"]
-type = "url"
-name = "MDN Web Docs"
-
-[items.payload]
-url = "https://developer.mozilla.org"
-
-[[items]]
-keywords = ["git", "commit", "template"]
+keywords = ["line", "cut", "cutting"]
 type = "snippet"
-name = "Git Commit Template"
+name = "Cut-off line"
 
 [items.payload]
-snippet = "feat: <description>\n\nDetailed changes:\n- \n- \n"
+snippet = "--------------------------------------------------------"
+
+[[items]]
+keywords = ["du", "disk", "command"]
+type = "snippet"
+name = "du"
+
+[items.payload]
+snippet = "du -h --max-depth=1"
+
+[[items]]
+keywords = ["cmake", "configure", "ninja"]
+type = "snippet"
+name = "cmake configure"
+
+[items.payload]
+snippet = "cmake -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE -S . -B ./build -G Ninja"
+
+[[items]]
+keywords = ["report", "typst", "bupt"]
+type = "snippet"
+name = "bupt typst report"
+
+[items.payload]
+snippet = "git clone https://github.com/Gh-Shinku/bupt-doc-templates --depth 1 report"
+
+[[items]]
+keywords = ["question", "introduc", "paper"]
+type = "snippet"
+name = "ask three questions"
+
+[items.payload]
+snippet = "请按以下几个方面介绍：\n1. 它尝试解决什么问题？\n2. 它如何解决这个问题？\n3. 有什么可以改进的方面？\n"
 

@@ -29,6 +29,7 @@ target_sources(SurfPanel
   src/resources.qrc
   src/config.cpp
   src/search_engine.cpp
+  src/app_logging.cpp
 )
 
 target_link_libraries(SurfPanel PRIVATE Qt6::Widgets toml11::toml11)

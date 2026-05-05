@@ -10,9 +10,8 @@ or overrides customize behavior without editing shared files.
 
 SurfPanel searches for the config root in this order:
 
-1. `SURFPANEL_CONFIG_DIR` environment variable (if set)
-2. `config/` in the current working directory
-3. `config/` next to the executable
+1. `config/` in the current working directory
+2. `config/` next to the executable
 
 ### Directory Layout
 

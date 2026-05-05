@@ -5,7 +5,6 @@
 #include <QString>
 #include <algorithm>
 #include <cstddef>
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <optional>
@@ -343,20 +342,10 @@ ConfigLoadResult TryLoadFallback(const fs::path &configRoot,
 } // namespace
 
 std::optional<fs::path> FindConfigRoot() {
-  const char *env = std::getenv("SURFPANEL_CONFIG_DIR");
-  if (env != nullptr && *env != '\0') {
-    fs::path envPath(env);
-    if (fs::exists(envPath) && fs::is_directory(envPath)) {
-      return envPath;
-    }
-  }
-
   const QString appDir = QCoreApplication::applicationDirPath();
   const std::vector<fs::path> candidates = {
-      fs::path("config"),
-      fs::path("..") / "config",
       fs::path(appDir.toStdString()) / "config",
-      fs::path(appDir.toStdString()) / ".." / "config",
+      fs::path(appDir.toStdString()) / ".." / "config", // for debug
   };
 
   for (const auto &candidate : candidates) {

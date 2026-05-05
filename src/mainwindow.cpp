@@ -575,7 +575,9 @@ void MainWindow::openConfigDirectory() {
   }
 
   const fs::path absolutePath = fs::absolute(*configDir);
-  const QString dirPath = QString::fromStdString(absolutePath.string());
+  QString dirPath =
+      QDir::cleanPath(QString::fromStdString(absolutePath.string()));
+  dirPath = QDir::toNativeSeparators(dirPath);
 
 #ifdef Q_OS_WIN
   const bool detached = QProcess::startDetached("explorer.exe", {dirPath});

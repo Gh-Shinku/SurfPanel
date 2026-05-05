@@ -1,4 +1,4 @@
-.PHONY: cg-debug cg-release build test clean
+.PHONY: cg-debug cg-release build test pack clean
 
 cg-debug:
 	@cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Debug
@@ -11,6 +11,9 @@ build:
 
 test:
 	@ctest --test-dir build --output-on-failure
+
+pack:
+	cmd //c pack.bat
 
 clean:
 	@rm -rf build
