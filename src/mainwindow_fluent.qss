@@ -1,39 +1,40 @@
 QMainWindow {
   background: transparent;
   font-family: "Segoe UI";
+  color: @text_color;
 }
 
 #panel {
-  background: rgba(243, 247, 252, 230);
-  border: 1px solid rgba(255, 255, 255, 190);
-  border-radius: 18px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
 }
 
 QLineEdit#searchInput {
-  background: rgba(255, 255, 255, 220);
-  color: #0f172a;
-  border: 1px solid rgba(30, 41, 59, 35);
-  border-radius: 12px;
-  padding: 12px 14px;
+  background: @input_bg;
+  color: @text_color;
+  border: 1px solid @input_border;
+  border-radius: 4px;
+  padding: 12px 14px 12px 14px;
   font-size: 15px;
-  selection-background-color: #2563eb;
-  selection-color: #ffffff;
+  selection-background-color: @selection_bg;
+  selection-color: @selection_text;
 }
 
 QLineEdit#searchInput:focus {
-  border: 1px solid #3b82f6;
-  background: rgba(255, 255, 255, 240);
+  border: 1px solid @accent_color;
+  background: @input_bg_focus;
 }
 
 QLineEdit#searchInput::placeholder {
-  color: #64748b;
+  color: @placeholder_color;
 }
 
 QListView#resultsList {
   background: transparent;
   outline: none;
   border: 0;
-  color: #0f172a;
+  color: @text_color;
   padding: 2px;
 }
 
@@ -44,7 +45,7 @@ QScrollBar:vertical {
 }
 
 QScrollBar::handle:vertical {
-  background: rgba(100, 116, 139, 120);
+  background: @scrollbar_handle;
   border-radius: 4px;
   min-height: 20px;
 }
@@ -56,3 +57,4 @@ QScrollBar::sub-page:vertical {
   background: transparent;
   border: none;
 }
+

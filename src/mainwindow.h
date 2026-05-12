@@ -4,6 +4,7 @@
 #include "action_manager.h"
 #include "item.h"
 #include "search_engine.h"
+#include <QColor>
 #include <QMainWindow>
 #include <cstddef>
 #include <vector>
@@ -11,12 +12,14 @@
 class QByteArray;
 class QEvent;
 class QAction;
+class QGraphicsDropShadowEffect;
 class QLineEdit;
 class QListView;
 class QMenu;
 class QModelIndex;
 class QShortcut;
 class QSystemTrayIcon;
+class FluentPanel;
 class SearchResultItemDelegate;
 class SearchResultListModel;
 struct ConfigLoadResult;
@@ -48,6 +51,14 @@ private:
   void setupHotkeyPlaceholder(bool enableHotkey);
   ConfigLoadResult loadBackendItems();
   void showPanel();
+  void hidePanel();
+  void updateTheme();
+  void updatePanelBackground();
+  void updateDropShadow();
+  void updateSearchIcon();
+  bool isSystemDarkMode() const;
+  QColor querySystemAccentColor() const;
+  QColor sampleWallpaperDominantColor() const;
   void openConfigDirectory();
   void reloadConfig();
   bool isAutoStartEnabled() const;
@@ -65,6 +76,11 @@ private:
   QListView *resultsView_;
   SearchResultListModel *resultsModel_;
   SearchResultItemDelegate *resultsDelegate_;
+  FluentPanel *panel_;
+  QGraphicsDropShadowEffect *panelShadow_;
+  QAction *searchIconAction_;
+  QColor accentColor_;
+  bool isDarkMode_;
 
   QSystemTrayIcon *trayIcon_;
   QMenu *trayMenu_;

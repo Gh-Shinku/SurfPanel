@@ -12,16 +12,23 @@
 #include <QDir>
 #include <QEvent>
 #include <QFile>
+#include <QFont>
 #include <QFrame>
+#include <QGraphicsDropShadowEffect>
 #include <QGuiApplication>
 #include <QIcon>
+#include <QImage>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QLinearGradient>
 #include <QListView>
 #include <QMenu>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPen>
+#include <QPixmap>
 #include <QProcess>
+#include <QRandomGenerator>
 #include <QScreen>
 #include <QSettings>
 #include <QShortcut>
@@ -34,6 +41,7 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <algorithm>
 #include <filesystem>
 #include <optional>
 #include <variant>
@@ -43,6 +51,10 @@
 #endif
 
 namespace fs = std::filesystem;
+
+namespace {
+QColor AccentForegroundColor(const QColor &accent);
+}
 
 class SearchResultListModel final : public QAbstractListModel {
 public:
@@ -102,7 +114,13 @@ private:
 class SearchResultItemDelegate final : public QStyledItemDelegate {
 public:
   explicit SearchResultItemDelegate(QObject *parent = nullptr)
-      : QStyledItemDelegate(parent) {}
+      : QStyledItemDelegate(parent), accentColor_(QColor("#005FB8")),
+        darkMode_(false) {}
+
+  void setTheme(const QColor &accentColor, bool darkMode) {
+    accentColor_ = accentColor;
+    darkMode_ = darkMode;
+  }
 
   QSize sizeHint(const QStyleOptionViewItem &option,
                  const QModelIndex &) const override {
@@ -117,13 +135,20 @@ public:
     const QRect rowRect = option.rect.adjusted(8, 4, -8, -4);
     const bool selected = (option.state & QStyle::State_Selected) != 0;
 
-    const QColor rowBg =
-        selected ? QColor("#dbeafe") : QColor(255, 255, 255, 195);
-    const QColor rowBorder =
-        selected ? QColor("#60a5fa") : QColor(148, 163, 184, 75);
+    const QColor baseRowBg =
+        darkMode_ ? QColor(44, 44, 44, 230) : QColor(255, 255, 255, 195);
+    const QColor baseRowBorder =
+        darkMode_ ? QColor(255, 255, 255, 28) : QColor(148, 163, 184, 75);
+    QColor selectedBg = accentColor_;
+    selectedBg.setAlpha(darkMode_ ? 102 : 77);
+    QColor selectedBorder = accentColor_;
+    selectedBorder.setAlpha(darkMode_ ? 200 : 220);
+
+    const QColor rowBg = selected ? selectedBg : baseRowBg;
+    const QColor rowBorder = selected ? selectedBorder : baseRowBorder;
     painter->setPen(QPen(rowBorder, 1));
     painter->setBrush(rowBg);
-    painter->drawRoundedRect(rowRect, 8, 8);
+    painter->drawRoundedRect(rowRect, 4, 4);
 
     const QString name = index.data(Qt::DisplayRole).toString();
     const QString typeRaw =
@@ -131,8 +156,11 @@ public:
     const bool isUrl = typeRaw.compare("url", Qt::CaseInsensitive) == 0;
     const QString typeText = isUrl ? "URL" : "SNIPPET";
 
-    const QColor tagBg = isUrl ? QColor("#2563eb") : QColor("#0f766e");
-    const QColor tagTextColor("#f8fafc");
+    QColor tagBg = accentColor_;
+    if (!isUrl) {
+      tagBg = accentColor_.darker(115);
+    }
+    const QColor tagTextColor = AccentForegroundColor(accentColor_);
 
     QFont nameFont = option.font;
     nameFont.setPointSizeF(11.5);
@@ -157,23 +185,155 @@ public:
     painter->setFont(tagFont);
     painter->setBrush(tagBg);
     painter->setPen(Qt::NoPen);
-    painter->drawRoundedRect(tagRect, 10, 10);
+    painter->drawRoundedRect(tagRect, 4, 4);
 
     painter->setPen(tagTextColor);
     painter->drawText(tagRect, Qt::AlignCenter, typeText);
 
     const QRect nameRect = rowRect.adjusted(14, 0, -tagWidth - 24, 0);
     painter->setFont(nameFont);
-    painter->setPen(QColor("#0f172a"));
+    painter->setPen(darkMode_ ? QColor("#F1F5F9") : QColor("#0F172A"));
     painter->drawText(
         nameRect, Qt::AlignVCenter | Qt::AlignLeft,
         nameMetrics.elidedText(name, Qt::ElideRight, nameRect.width()));
 
     painter->restore();
   }
+
+private:
+  QColor accentColor_;
+  bool darkMode_;
+};
+
+class FluentPanel final : public QFrame {
+public:
+  explicit FluentPanel(QWidget *parent = nullptr)
+      : QFrame(parent), baseColor_(Qt::transparent),
+        borderColor_(Qt::transparent), cornerRadius_(8), darkMode_(false) {
+    setAttribute(Qt::WA_TranslucentBackground, true);
+    setAutoFillBackground(false);
+  }
+
+  void setThemeColors(const QColor &baseColor, const QColor &borderColor,
+                      bool darkMode) {
+    baseColor_ = baseColor;
+    borderColor_ = borderColor;
+    darkMode_ = darkMode;
+    rebuildNoise();
+    update();
+  }
+
+  void setCornerRadius(int radius) {
+    if (cornerRadius_ == radius) {
+      return;
+    }
+    cornerRadius_ = radius;
+    update();
+  }
+
+protected:
+  void paintEvent(QPaintEvent *event) override {
+    Q_UNUSED(event);
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    QRectF rect = this->rect();
+    rect.adjust(0.5, 0.5, -0.5, -0.5);
+
+    QPainterPath path;
+    path.addRoundedRect(rect, cornerRadius_, cornerRadius_);
+
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(baseColor_);
+    painter.drawPath(path);
+
+    painter.save();
+    painter.setClipPath(path);
+
+    QLinearGradient gradient(rect.topLeft(), rect.bottomLeft());
+    gradient.setColorAt(0.0, QColor(255, 255, 255, darkMode_ ? 10 : 6));
+    gradient.setColorAt(1.0, QColor(0, 0, 0, darkMode_ ? 18 : 8));
+    painter.setBrush(gradient);
+    painter.drawRect(rect);
+
+    if (!noiseTile_.isNull()) {
+      painter.setBrush(QBrush(noiseTile_));
+      painter.drawRect(rect);
+    }
+
+    painter.restore();
+
+    painter.setPen(QPen(borderColor_, 1));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawPath(path);
+  }
+
+private:
+  void rebuildNoise() { noiseTile_ = QPixmap(); }
+
+  QColor baseColor_;
+  QColor borderColor_;
+  int cornerRadius_;
+  bool darkMode_;
+  QPixmap noiseTile_;
 };
 
 namespace {
+
+QString ToRgbaString(const QColor &color) {
+  return QString("rgba(%1, %2, %3, %4)")
+      .arg(color.red())
+      .arg(color.green())
+      .arg(color.blue())
+      .arg(color.alpha());
+}
+
+QString ToHexString(const QColor &color) {
+  return QString("#%1%2%3")
+      .arg(color.red(), 2, 16, QLatin1Char('0'))
+      .arg(color.green(), 2, 16, QLatin1Char('0'))
+      .arg(color.blue(), 2, 16, QLatin1Char('0'))
+      .toUpper();
+}
+
+QColor BlendColors(const QColor &base, const QColor &tint, double tintRatio) {
+  const double ratio = std::clamp(tintRatio, 0.0, 1.0);
+  const double baseRatio = 1.0 - ratio;
+  const int red = static_cast<int>(base.red() * baseRatio + tint.red() * ratio);
+  const int green =
+      static_cast<int>(base.green() * baseRatio + tint.green() * ratio);
+  const int blue =
+      static_cast<int>(base.blue() * baseRatio + tint.blue() * ratio);
+  return QColor(red, green, blue);
+}
+
+QColor AccentForegroundColor(const QColor &accent) {
+  const double luminance = (0.2126 * accent.red() + 0.7152 * accent.green() +
+                            0.0722 * accent.blue()) /
+                           255.0;
+  return luminance > 0.6 ? QColor(10, 10, 10) : QColor(248, 250, 252);
+}
+
+QIcon BuildSearchIcon(const QColor &color, int size) {
+  QPixmap pixmap(size, size);
+  pixmap.fill(Qt::transparent);
+
+  QPainter painter(&pixmap);
+  painter.setRenderHint(QPainter::Antialiasing, true);
+
+  QPen pen(color);
+  pen.setWidthF(1.6);
+  pen.setCapStyle(Qt::RoundCap);
+  painter.setPen(pen);
+
+  const QPointF center(size * 0.45, size * 0.45);
+  const qreal radius = size * 0.22;
+  painter.drawEllipse(center, radius, radius);
+  painter.drawLine(QPointF(size * 0.60, size * 0.60),
+                   QPointF(size * 0.78, size * 0.78));
+
+  return QIcon(pixmap);
+}
 
 std::optional<QString> FindStylesheetPath() {
   const QString appDir = QCoreApplication::applicationDirPath();
@@ -226,7 +386,9 @@ QString NormalizeStartupValue(const QString &value) {
 
 MainWindow::MainWindow(QWidget *parent, bool enableHotkey)
     : QMainWindow(parent), input_(nullptr), resultsView_(nullptr),
-      resultsModel_(nullptr), resultsDelegate_(nullptr), trayIcon_(nullptr),
+      resultsModel_(nullptr), resultsDelegate_(nullptr), panel_(nullptr),
+      panelShadow_(nullptr), searchIconAction_(nullptr),
+      accentColor_(QColor("#005FB8")), isDarkMode_(false), trayIcon_(nullptr),
       trayMenu_(nullptr), showPanelAction_(nullptr),
       showConfigDirAction_(nullptr), reloadConfigAction_(nullptr),
       autoStartAction_(nullptr), exitAction_(nullptr),
@@ -235,6 +397,7 @@ MainWindow::MainWindow(QWidget *parent, bool enableHotkey)
 
   setupWindow();
   setupUi();
+  updateTheme();
   setupConnections();
   setupTrayIcon();
   loadBackendItems();
@@ -258,7 +421,7 @@ void MainWindow::setItems(const std::vector<StringItem> &items) {
 
 bool MainWindow::event(QEvent *event) {
   if (event->type() == QEvent::WindowDeactivate && isVisible()) {
-    hide();
+    hidePanel();
   }
   return QMainWindow::event(event);
 }
@@ -279,7 +442,7 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
     }
 
     if (keyEvent->key() == Qt::Key_Escape && isVisible()) {
-      hide();
+      hidePanel();
       return true;
     }
   }
@@ -321,20 +484,24 @@ void MainWindow::setupUi() {
   QVBoxLayout *rootLayout = new QVBoxLayout(root);
   rootLayout->setContentsMargins(0, 0, 0, 0);
 
-  QFrame *panel = new QFrame(root);
-  panel->setObjectName("panel");
-  panel->setFrameShape(QFrame::NoFrame);
+  panel_ = new FluentPanel(root);
+  panel_->setObjectName("panel");
+  panel_->setFrameShape(QFrame::NoFrame);
+  panel_->setCornerRadius(8);
 
-  QVBoxLayout *panelLayout = new QVBoxLayout(panel);
+  panelShadow_ = new QGraphicsDropShadowEffect(panel_);
+  panel_->setGraphicsEffect(panelShadow_);
+
+  QVBoxLayout *panelLayout = new QVBoxLayout(panel_);
   panelLayout->setContentsMargins(14, 14, 14, 14);
   panelLayout->setSpacing(10);
 
-  input_ = new QLineEdit(panel);
+  input_ = new QLineEdit(panel_);
   input_->setObjectName("searchInput");
   input_->setPlaceholderText("Search bookmarks and snippets...");
   input_->setClearButtonEnabled(true);
 
-  resultsView_ = new QListView(panel);
+  resultsView_ = new QListView(panel_);
   resultsView_->setObjectName("resultsList");
   resultsView_->setFrameShape(QFrame::NoFrame);
   resultsView_->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -351,31 +518,229 @@ void MainWindow::setupUi() {
   panelLayout->addWidget(input_);
   panelLayout->addWidget(resultsView_, 1);
 
-  rootLayout->addWidget(panel);
+  rootLayout->addWidget(panel_);
   setCentralWidget(root);
-  applyStylesheet();
 }
 
 void MainWindow::applyStylesheet() {
+  QString styleSource;
   QFile embeddedStyleFile(":/styles/mainwindow_fluent.qss");
   if (embeddedStyleFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    setStyleSheet(QString::fromUtf8(embeddedStyleFile.readAll()));
+    styleSource = QString::fromUtf8(embeddedStyleFile.readAll());
+  } else {
+    const auto stylePath = FindStylesheetPath();
+    if (!stylePath.has_value()) {
+      qWarning() << "Fluent stylesheet not found; using default style.";
+      return;
+    }
+
+    QFile styleFile(*stylePath);
+    if (!styleFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+      qWarning() << "Failed to open stylesheet:" << *stylePath;
+      return;
+    }
+    styleSource = QString::fromUtf8(styleFile.readAll());
+  }
+
+  const QColor accent =
+      accentColor_.isValid() ? accentColor_ : QColor("#005FB8");
+  const QColor textColor = isDarkMode_ ? QColor("#F1F5F9") : QColor("#0F172A");
+  const QColor placeholderColor =
+      isDarkMode_ ? QColor("#94A3B8") : QColor("#64748B");
+  const QColor inputBg =
+      isDarkMode_ ? QColor(48, 48, 48, 255) : QColor(255, 255, 255, 255);
+  const QColor inputBgFocus =
+      isDarkMode_ ? QColor(56, 56, 56, 255) : QColor(255, 255, 255, 255);
+  const QColor inputBorder =
+      isDarkMode_ ? QColor(255, 255, 255, 25) : QColor(30, 41, 59, 35);
+  const QColor selectionText = AccentForegroundColor(accent);
+  QColor selectionBg = accent;
+  selectionBg.setAlpha(isDarkMode_ ? 102 : 77);
+
+  const QColor menuBg =
+      isDarkMode_ ? QColor(32, 32, 32, 235) : QColor(255, 255, 255, 230);
+  const QColor menuBorder =
+      isDarkMode_ ? QColor(255, 255, 255, 25) : QColor(0, 0, 0, 30);
+  const QColor menuSeparator =
+      isDarkMode_ ? QColor(70, 70, 70) : QColor(224, 224, 224);
+  const QColor scrollbarHandle =
+      isDarkMode_ ? QColor(148, 163, 184, 120) : QColor(100, 116, 139, 120);
+
+  QString themed = styleSource;
+  themed.replace("@accent_color", ToHexString(accent));
+  themed.replace("@text_color", ToHexString(textColor));
+  themed.replace("@placeholder_color", ToHexString(placeholderColor));
+  themed.replace("@input_bg_focus", ToRgbaString(inputBgFocus));
+  themed.replace("@input_bg", ToRgbaString(inputBg));
+  themed.replace("@input_border", ToRgbaString(inputBorder));
+  themed.replace("@selection_bg", ToRgbaString(selectionBg));
+  themed.replace("@selection_text", ToHexString(selectionText));
+  themed.replace("@menu_bg", ToRgbaString(menuBg));
+  themed.replace("@menu_border", ToRgbaString(menuBorder));
+  themed.replace("@menu_separator", ToHexString(menuSeparator));
+  themed.replace("@scrollbar_handle", ToRgbaString(scrollbarHandle));
+
+  setStyleSheet(themed);
+
+  if (input_ != nullptr) {
+    QPalette palette = input_->palette();
+    palette.setColor(QPalette::Base, inputBg);
+    palette.setColor(QPalette::Text, textColor);
+    palette.setColor(QPalette::PlaceholderText, placeholderColor);
+    palette.setColor(QPalette::Highlight, selectionBg);
+    palette.setColor(QPalette::HighlightedText, selectionText);
+    input_->setPalette(palette);
+
+    const QString inputStyle =
+        QString("QLineEdit#searchInput { background: %1; color: %2; border: "
+                "1px solid %3; "
+                "border-radius: 4px; padding: 12px 14px; font-size: 15px; "
+                "selection-background-color: %4; selection-color: %5; }"
+                "QLineEdit#searchInput:focus { background: %6; border: 1px "
+                "solid %7; }"
+                "QLineEdit#searchInput::placeholder { color: %8; }")
+            .arg(ToRgbaString(inputBg))
+            .arg(ToHexString(textColor))
+            .arg(ToRgbaString(inputBorder))
+            .arg(ToRgbaString(selectionBg))
+            .arg(ToHexString(selectionText))
+            .arg(ToRgbaString(inputBgFocus))
+            .arg(ToHexString(accent))
+            .arg(ToHexString(placeholderColor));
+    input_->setStyleSheet(inputStyle);
+  }
+}
+
+void MainWindow::updateTheme() {
+  const bool darkMode = isSystemDarkMode();
+  const QColor accent = querySystemAccentColor();
+  const bool themeChanged =
+      (darkMode != isDarkMode_) || (accent != accentColor_ && accent.isValid());
+  const bool needsApply = themeChanged || styleSheet().isEmpty();
+
+  isDarkMode_ = darkMode;
+  if (accent.isValid()) {
+    accentColor_ = accent;
+  }
+
+  if (needsApply) {
+    applyStylesheet();
+    updateDropShadow();
+    updateSearchIcon();
+
+    if (resultsDelegate_ != nullptr) {
+      resultsDelegate_->setTheme(accentColor_, isDarkMode_);
+    }
+
+    if (resultsView_ != nullptr) {
+      resultsView_->viewport()->update();
+    }
+  }
+
+  updatePanelBackground();
+}
+
+void MainWindow::updatePanelBackground() {
+  if (panel_ == nullptr) {
     return;
   }
 
-  const auto stylePath = FindStylesheetPath();
-  if (!stylePath.has_value()) {
-    qWarning() << "Fluent stylesheet not found; using default style.";
+  const QColor base = isDarkMode_ ? QColor("#1C1C1C") : QColor("#F3F3F3");
+  QColor wallpaper = sampleWallpaperDominantColor();
+  if (!wallpaper.isValid()) {
+    wallpaper = base;
+  }
+
+  const double tintRatio = isDarkMode_ ? 0.15 : 0.10;
+  QColor mica = BlendColors(base, wallpaper, tintRatio);
+  mica.setAlpha(isDarkMode_ ? 242 : 248);
+
+  const QColor border =
+      isDarkMode_ ? QColor(255, 255, 255, 20) : QColor(0, 0, 0, 15);
+  panel_->setThemeColors(mica, border, isDarkMode_);
+}
+
+void MainWindow::updateDropShadow() {
+  if (panelShadow_ == nullptr) {
     return;
   }
 
-  QFile styleFile(*stylePath);
-  if (!styleFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    qWarning() << "Failed to open stylesheet:" << *stylePath;
+  panelShadow_->setBlurRadius(48.0);
+  panelShadow_->setOffset(0, 8);
+  panelShadow_->setColor(QColor(0, 0, 0, isDarkMode_ ? 102 : 38));
+}
+
+void MainWindow::updateSearchIcon() {
+  if (searchIconAction_ == nullptr) {
     return;
   }
 
-  setStyleSheet(QString::fromUtf8(styleFile.readAll()));
+  const QColor iconColor = isDarkMode_ ? QColor("#94A3B8") : QColor("#64748B");
+  searchIconAction_->setIcon(BuildSearchIcon(iconColor, 16));
+}
+
+bool MainWindow::isSystemDarkMode() const {
+#ifdef Q_OS_WIN
+  QSettings settings(
+      "HKEY_CURRENT_"
+      "USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+      QSettings::NativeFormat);
+  return settings.value("AppsUseLightTheme", 1).toInt() == 0;
+#else
+  return false;
+#endif
+}
+
+QColor MainWindow::querySystemAccentColor() const {
+#ifdef Q_OS_WIN
+  QColor fallback("#005FB8");
+  HMODULE dwmapi = LoadLibraryW(L"dwmapi.dll");
+  if (dwmapi == nullptr) {
+    return fallback;
+  }
+
+  using DwmGetColorizationColorFn = HRESULT(WINAPI *)(DWORD *, BOOL *);
+  auto fn = reinterpret_cast<DwmGetColorizationColorFn>(
+      GetProcAddress(dwmapi, "DwmGetColorizationColor"));
+  if (fn == nullptr) {
+    FreeLibrary(dwmapi);
+    return fallback;
+  }
+
+  DWORD color = 0;
+  BOOL opaque = FALSE;
+  const HRESULT result = fn(&color, &opaque);
+  FreeLibrary(dwmapi);
+  if (FAILED(result)) {
+    return fallback;
+  }
+
+  return QColor((color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF);
+#else
+  return QColor("#005FB8");
+#endif
+}
+
+QColor MainWindow::sampleWallpaperDominantColor() const {
+#ifdef Q_OS_WIN
+  QSettings settings("HKEY_CURRENT_USER\\Control Panel\\Desktop",
+                     QSettings::NativeFormat);
+  const QString wallpaperPath = settings.value("WallPaper").toString();
+  if (wallpaperPath.isEmpty() || !QFile::exists(wallpaperPath)) {
+    return QColor();
+  }
+
+  QImage wallpaper(wallpaperPath);
+  if (wallpaper.isNull()) {
+    return QColor();
+  }
+
+  const QImage scaled =
+      wallpaper.scaled(1, 1, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+  return QColor::fromRgb(scaled.pixel(0, 0));
+#else
+  return QColor();
+#endif
 }
 
 void MainWindow::setupTrayIcon() {
@@ -443,7 +808,7 @@ void MainWindow::setupConnections() {
   escapeShortcut->setContext(Qt::ApplicationShortcut);
   connect(escapeShortcut, &QShortcut::activated, this, [this]() {
     if (isVisible()) {
-      hide();
+      hidePanel();
     }
   });
 }
@@ -495,12 +860,32 @@ ConfigLoadResult MainWindow::loadBackendItems() {
 }
 
 void MainWindow::showPanel() {
+  updateTheme();
+
+  if (isVisible()) {
+    raise();
+    activateWindow();
+    input_->setFocus();
+    input_->selectAll();
+    return;
+  }
+
   centerOnScreen();
+  setWindowOpacity(1.0);
   show();
   raise();
   activateWindow();
   input_->setFocus();
   input_->selectAll();
+}
+
+void MainWindow::hidePanel() {
+  if (!isVisible()) {
+    return;
+  }
+
+  hide();
+  setWindowOpacity(1.0);
 }
 
 void MainWindow::reloadConfig() {
@@ -602,7 +987,7 @@ void MainWindow::centerOnScreen() {
 
 void MainWindow::toggleVisibilityFromHotkey() {
   if (isVisible()) {
-    hide();
+    hidePanel();
     return;
   }
 
@@ -682,7 +1067,7 @@ void MainWindow::invokeItemAction(const StringItem *item) {
     return;
   }
 
-  hide();
+  hidePanel();
   input_->clear();
   resultsModel_->setResults({});
 
