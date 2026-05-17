@@ -61,6 +61,39 @@ TEST(MainWindowTest, TextChangedQueriesSearchAndAppliesTopK) {
   ASSERT_EQ(0, list->model()->rowCount());
 }
 
+TEST(MainWindowTest, PrefixQueryShowsScrollableResultWindow) {
+  MainWindow window(nullptr, false);
+  window.setItems(MakeRankedItems(8));
+
+  QLineEdit *input = window.findChild<QLineEdit *>("searchInput");
+  QListView *list = window.findChild<QListView *>("resultsList");
+
+  ASSERT_NE(nullptr, input);
+  ASSERT_NE(nullptr, list);
+  ASSERT_EQ(Qt::ScrollBarAsNeeded, list->verticalScrollBarPolicy());
+
+  input->setText("u git");
+  QCoreApplication::processEvents();
+
+  ASSERT_EQ(8, list->model()->rowCount());
+}
+
+TEST(MainWindowTest, PrefixQueryIsCappedAtWindowLimit) {
+  MainWindow window(nullptr, false);
+  window.setItems(MakeRankedItems(140));
+
+  QLineEdit *input = window.findChild<QLineEdit *>("searchInput");
+  QListView *list = window.findChild<QListView *>("resultsList");
+
+  ASSERT_NE(nullptr, input);
+  ASSERT_NE(nullptr, list);
+
+  input->setText("u git");
+  QCoreApplication::processEvents();
+
+  ASSERT_EQ(128, list->model()->rowCount());
+}
+
 TEST(MainWindowTest, EscapeShortcutHidesPanel) {
   MainWindow window(nullptr, false);
   window.show();

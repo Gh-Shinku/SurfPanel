@@ -476,6 +476,7 @@ void MainWindow::setupUi() {
   resultsView_->setEditTriggers(QAbstractItemView::NoEditTriggers);
   resultsView_->setSelectionMode(QAbstractItemView::SingleSelection);
   resultsView_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+  resultsView_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
   resultsView_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   resultsView_->setUniformItemSizes(true);
 
@@ -946,7 +947,10 @@ void MainWindow::moveResultSelection(int delta) {
 }
 
 void MainWindow::onQueryTextChanged(const QString &text) {
-  const auto results = searchEngine_.search(text, kTopK);
+  const SearchQueryInfo query = searchEngine_.parseQuery(text);
+  const std::size_t resultLimit =
+      query.prefixMode ? kPrefixModeMaxResults : kTopK;
+  const auto results = searchEngine_.search(text, resultLimit);
   resultsModel_->setResults(results);
 
   if (resultsModel_->rowCount() > 0) {

@@ -92,6 +92,7 @@ private:
   ActionManager actionManager_;
 
   static constexpr std::size_t kTopK = 6;
+  static constexpr std::size_t kPrefixModeMaxResults = 128;
   bool globalHotkeyRegistered_;
   int hotkeyId_;
   QShortcut *fallbackShortcut_;

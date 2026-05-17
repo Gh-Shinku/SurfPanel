@@ -8,11 +8,6 @@ struct SearchMatch {
   int score;
 };
 
-struct ParsedQuery {
-  QString query;
-  std::optional<QString> itemType;
-};
-
 std::optional<int> FindFirstSpace(const QString &query) {
   for (int i = 0; i < query.size(); ++i) {
     if (query.at(i).isSpace()) {
@@ -39,19 +34,16 @@ void SearchEngine::setSearchPrefixes(
   prefixes_ = prefixes;
 }
 
-std::vector<const StringItem *> SearchEngine::search(QString query,
-                                                     std::size_t k) const {
+SearchQueryInfo SearchEngine::parseQuery(QString query) const {
   query = TrimLeft(query);
-  if (query.trimmed().isEmpty() || k == 0) {
-    return {};
-  }
 
-  ParsedQuery parsed;
+  SearchQueryInfo parsed;
   parsed.query = query.trimmed();
   if (const auto spaceIndex = FindFirstSpace(query); spaceIndex.has_value()) {
     const QString prefix = query.left(*spaceIndex);
     for (const auto &rule : prefixes_) {
       if (rule.prefix == prefix) {
+        parsed.prefixMode = true;
         parsed.itemType = rule.itemType.toLower();
         parsed.query = query.mid(*spaceIndex + 1).trimmed();
         break;
@@ -60,10 +52,20 @@ std::vector<const StringItem *> SearchEngine::search(QString query,
   }
 
   parsed.query = parsed.query.toLower();
+  return parsed;
+}
+
+std::vector<const StringItem *> SearchEngine::search(QString query,
+                                                     std::size_t k) const {
+  const SearchQueryInfo parsed = parseQuery(query);
+  if ((!parsed.prefixMode && parsed.query.isEmpty()) || k == 0) {
+    return {};
+  }
+
   std::vector<SearchMatch> matches;
   for (const auto &item : items_) {
-    if (parsed.itemType.has_value() &&
-        item.type.compare(*parsed.itemType, Qt::CaseInsensitive) != 0) {
+    if (parsed.prefixMode &&
+        item.type.compare(parsed.itemType, Qt::CaseInsensitive) != 0) {
       continue;
     }
 

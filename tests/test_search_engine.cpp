@@ -35,6 +35,16 @@ std::vector<SearchPrefixRule> DefaultPrefixes() {
   };
 }
 
+std::vector<StringItem> MakeManyUrlItems(int count) {
+  std::vector<StringItem> items;
+  items.reserve(static_cast<std::size_t>(count));
+  for (int i = 0; i < count; ++i) {
+    items.push_back(MakeUrlItem(QString("Git %1").arg(i), {"git"},
+                                QString("https://example.com/%1").arg(i)));
+  }
+  return items;
+}
+
 } // namespace
 
 TEST(SearchEngineTest, EmptyQueryReturnsNoResults) {
@@ -153,6 +163,25 @@ TEST(SearchEngineTest, PrefixFiltersUrls) {
   ASSERT_EQ(QString("GitHub"), results[0]->name);
 }
 
+TEST(SearchEngineTest, ParseQueryMarksRecognizedPrefixMode) {
+  SearchEngine engine;
+  engine.setSearchPrefixes(DefaultPrefixes());
+
+  const SearchQueryInfo parsed = engine.parseQuery("u git");
+  ASSERT_TRUE(parsed.prefixMode);
+  ASSERT_EQ(QString("url"), parsed.itemType);
+  ASSERT_EQ(QString("git"), parsed.query);
+}
+
+TEST(SearchEngineTest, RecognizedPrefixCanReturnMoreThanTopK) {
+  SearchEngine engine;
+  engine.setSearchPrefixes(DefaultPrefixes());
+  engine.setItems(MakeManyUrlItems(10));
+
+  const auto results = engine.search("u git", 128);
+  ASSERT_EQ(std::size_t(10), results.size());
+}
+
 TEST(SearchEngineTest, PrefixWithEmptyQueryShowsMatchingType) {
   SearchEngine engine;
   engine.setSearchPrefixes(DefaultPrefixes());
@@ -168,6 +197,15 @@ TEST(SearchEngineTest, PrefixWithEmptyQueryShowsMatchingType) {
   ASSERT_EQ(QString("Beta Snippet"), results[1]->name);
 }
 
+TEST(SearchEngineTest, PrefixWithEmptyQueryRespectsRequestedCap) {
+  SearchEngine engine;
+  engine.setSearchPrefixes(DefaultPrefixes());
+  engine.setItems(MakeManyUrlItems(10));
+
+  const auto results = engine.search("u ", 7);
+  ASSERT_EQ(std::size_t(7), results.size());
+}
+
 TEST(SearchEngineTest, UnknownPrefixBehavesLikeOrdinarySearch) {
   SearchEngine engine;
   engine.setSearchPrefixes(DefaultPrefixes());
@@ -179,6 +217,10 @@ TEST(SearchEngineTest, UnknownPrefixBehavesLikeOrdinarySearch) {
   const auto results = engine.search("x git", 3);
   ASSERT_EQ(std::size_t(1), results.size());
   ASSERT_EQ(QString("x git"), results[0]->name);
+
+  const SearchQueryInfo parsed = engine.parseQuery("x git");
+  ASSERT_TRUE(!parsed.prefixMode);
+  ASSERT_EQ(QString("x git"), parsed.query);
 }
 
 TEST(SearchEngineTest, CustomPrefixesOverrideDefaults) {
