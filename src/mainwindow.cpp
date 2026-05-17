@@ -26,9 +26,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPen>
-#include <QPixmap>
 #include <QProcess>
-#include <QRandomGenerator>
 #include <QScreen>
 #include <QSettings>
 #include <QShortcut>
@@ -219,7 +217,6 @@ public:
     baseColor_ = baseColor;
     borderColor_ = borderColor;
     darkMode_ = darkMode;
-    rebuildNoise();
     update();
   }
 
@@ -256,11 +253,6 @@ protected:
     painter.setBrush(gradient);
     painter.drawRect(rect);
 
-    if (!noiseTile_.isNull()) {
-      painter.setBrush(QBrush(noiseTile_));
-      painter.drawRect(rect);
-    }
-
     painter.restore();
 
     painter.setPen(QPen(borderColor_, 1));
@@ -269,13 +261,10 @@ protected:
   }
 
 private:
-  void rebuildNoise() { noiseTile_ = QPixmap(); }
-
   QColor baseColor_;
   QColor borderColor_;
   int cornerRadius_;
   bool darkMode_;
-  QPixmap noiseTile_;
 };
 
 namespace {
@@ -312,27 +301,6 @@ QColor AccentForegroundColor(const QColor &accent) {
                             0.0722 * accent.blue()) /
                            255.0;
   return luminance > 0.6 ? QColor(10, 10, 10) : QColor(248, 250, 252);
-}
-
-QIcon BuildSearchIcon(const QColor &color, int size) {
-  QPixmap pixmap(size, size);
-  pixmap.fill(Qt::transparent);
-
-  QPainter painter(&pixmap);
-  painter.setRenderHint(QPainter::Antialiasing, true);
-
-  QPen pen(color);
-  pen.setWidthF(1.6);
-  pen.setCapStyle(Qt::RoundCap);
-  painter.setPen(pen);
-
-  const QPointF center(size * 0.45, size * 0.45);
-  const qreal radius = size * 0.22;
-  painter.drawEllipse(center, radius, radius);
-  painter.drawLine(QPointF(size * 0.60, size * 0.60),
-                   QPointF(size * 0.78, size * 0.78));
-
-  return QIcon(pixmap);
 }
 
 std::optional<QString> FindStylesheetPath() {
@@ -387,8 +355,8 @@ QString NormalizeStartupValue(const QString &value) {
 MainWindow::MainWindow(QWidget *parent, bool enableHotkey)
     : QMainWindow(parent), input_(nullptr), resultsView_(nullptr),
       resultsModel_(nullptr), resultsDelegate_(nullptr), panel_(nullptr),
-      panelShadow_(nullptr), searchIconAction_(nullptr),
-      accentColor_(QColor("#005FB8")), isDarkMode_(false), trayIcon_(nullptr),
+      panelShadow_(nullptr), accentColor_(QColor("#005FB8")),
+      isDarkMode_(false), trayIcon_(nullptr),
       trayMenu_(nullptr), showPanelAction_(nullptr),
       showConfigDirAction_(nullptr), reloadConfigAction_(nullptr),
       autoStartAction_(nullptr), exitAction_(nullptr),
@@ -558,12 +526,6 @@ void MainWindow::applyStylesheet() {
   QColor selectionBg = accent;
   selectionBg.setAlpha(isDarkMode_ ? 102 : 77);
 
-  const QColor menuBg =
-      isDarkMode_ ? QColor(32, 32, 32, 235) : QColor(255, 255, 255, 230);
-  const QColor menuBorder =
-      isDarkMode_ ? QColor(255, 255, 255, 25) : QColor(0, 0, 0, 30);
-  const QColor menuSeparator =
-      isDarkMode_ ? QColor(70, 70, 70) : QColor(224, 224, 224);
   const QColor scrollbarHandle =
       isDarkMode_ ? QColor(148, 163, 184, 120) : QColor(100, 116, 139, 120);
 
@@ -576,40 +538,9 @@ void MainWindow::applyStylesheet() {
   themed.replace("@input_border", ToRgbaString(inputBorder));
   themed.replace("@selection_bg", ToRgbaString(selectionBg));
   themed.replace("@selection_text", ToHexString(selectionText));
-  themed.replace("@menu_bg", ToRgbaString(menuBg));
-  themed.replace("@menu_border", ToRgbaString(menuBorder));
-  themed.replace("@menu_separator", ToHexString(menuSeparator));
   themed.replace("@scrollbar_handle", ToRgbaString(scrollbarHandle));
 
   setStyleSheet(themed);
-
-  if (input_ != nullptr) {
-    QPalette palette = input_->palette();
-    palette.setColor(QPalette::Base, inputBg);
-    palette.setColor(QPalette::Text, textColor);
-    palette.setColor(QPalette::PlaceholderText, placeholderColor);
-    palette.setColor(QPalette::Highlight, selectionBg);
-    palette.setColor(QPalette::HighlightedText, selectionText);
-    input_->setPalette(palette);
-
-    const QString inputStyle =
-        QString("QLineEdit#searchInput { background: %1; color: %2; border: "
-                "1px solid %3; "
-                "border-radius: 4px; padding: 12px 14px; font-size: 15px; "
-                "selection-background-color: %4; selection-color: %5; }"
-                "QLineEdit#searchInput:focus { background: %6; border: 1px "
-                "solid %7; }"
-                "QLineEdit#searchInput::placeholder { color: %8; }")
-            .arg(ToRgbaString(inputBg))
-            .arg(ToHexString(textColor))
-            .arg(ToRgbaString(inputBorder))
-            .arg(ToRgbaString(selectionBg))
-            .arg(ToHexString(selectionText))
-            .arg(ToRgbaString(inputBgFocus))
-            .arg(ToHexString(accent))
-            .arg(ToHexString(placeholderColor));
-    input_->setStyleSheet(inputStyle);
-  }
 }
 
 void MainWindow::updateTheme() {
@@ -627,7 +558,6 @@ void MainWindow::updateTheme() {
   if (needsApply) {
     applyStylesheet();
     updateDropShadow();
-    updateSearchIcon();
 
     if (resultsDelegate_ != nullptr) {
       resultsDelegate_->setTheme(accentColor_, isDarkMode_);
@@ -669,15 +599,6 @@ void MainWindow::updateDropShadow() {
   panelShadow_->setBlurRadius(48.0);
   panelShadow_->setOffset(0, 8);
   panelShadow_->setColor(QColor(0, 0, 0, isDarkMode_ ? 102 : 38));
-}
-
-void MainWindow::updateSearchIcon() {
-  if (searchIconAction_ == nullptr) {
-    return;
-  }
-
-  const QColor iconColor = isDarkMode_ ? QColor("#94A3B8") : QColor("#64748B");
-  searchIconAction_->setIcon(BuildSearchIcon(iconColor, 16));
 }
 
 bool MainWindow::isSystemDarkMode() const {

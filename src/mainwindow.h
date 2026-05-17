@@ -55,7 +55,6 @@ private:
   void updateTheme();
   void updatePanelBackground();
   void updateDropShadow();
-  void updateSearchIcon();
   bool isSystemDarkMode() const;
   QColor querySystemAccentColor() const;
   QColor sampleWallpaperDominantColor() const;
@@ -78,7 +77,6 @@ private:
   SearchResultItemDelegate *resultsDelegate_;
   FluentPanel *panel_;
   QGraphicsDropShadowEffect *panelShadow_;
-  QAction *searchIconAction_;
   QColor accentColor_;
   bool isDarkMode_;
 
