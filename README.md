@@ -1,5 +1,7 @@
 # SurfPanel
 
+[**中文**](./README_zh.md)
+
 SurfPanel is a lightweight desktop command palette for quick access to
 bookmarks and text snippets. It runs in the system tray, supports a global
 hotkey, and loads items from simple TOML files so you can customize it without
