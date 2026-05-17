@@ -135,9 +135,9 @@ public:
     if (selected || hovered) {
       const QColor rowBg =
           selected ? (darkMode_ ? QColor(255, 255, 255, 28)
-                                : QColor(0, 0, 0, 24))
+                                : QColor(0, 0, 0, 16))
                    : (darkMode_ ? QColor(255, 255, 255, 14)
-                                : QColor(0, 0, 0, 12));
+                                : QColor(0, 0, 0, 7));
       painter->setPen(Qt::NoPen);
       painter->setBrush(rowBg);
       painter->drawRoundedRect(rowRect, 6, 6);
@@ -166,13 +166,13 @@ public:
 
     const QRect nameRect = rowRect.adjusted(14, 0, -typeWidth - 32, 0);
     painter->setFont(nameFont);
-    painter->setPen(darkMode_ ? QColor("#F1F5F9") : QColor("#0F172A"));
+    painter->setPen(darkMode_ ? QColor("#F1F5F9") : QColor("#1F1F1F"));
     painter->drawText(
         nameRect, Qt::AlignVCenter | Qt::AlignLeft,
         nameMetrics.elidedText(name, Qt::ElideRight, nameRect.width()));
 
     painter->setFont(typeFont);
-    painter->setPen(darkMode_ ? QColor(148, 163, 184) : QColor(100, 116, 139));
+    painter->setPen(darkMode_ ? QColor(148, 163, 184) : QColor(104, 104, 104));
     painter->drawText(typeRect, Qt::AlignVCenter | Qt::AlignRight, typeText);
 
     painter->restore();
@@ -227,8 +227,8 @@ protected:
     painter.setClipPath(path);
 
     QLinearGradient gradient(rect.topLeft(), rect.bottomLeft());
-    gradient.setColorAt(0.0, QColor(255, 255, 255, darkMode_ ? 10 : 6));
-    gradient.setColorAt(1.0, QColor(0, 0, 0, darkMode_ ? 18 : 8));
+    gradient.setColorAt(0.0, QColor(255, 255, 255, darkMode_ ? 10 : 2));
+    gradient.setColorAt(1.0, QColor(0, 0, 0, darkMode_ ? 18 : 3));
     painter.setBrush(gradient);
     painter.drawRect(rect);
 
@@ -494,17 +494,17 @@ void MainWindow::applyStylesheet() {
 
   const QColor accent =
       accentColor_.isValid() ? accentColor_ : QColor("#005FB8");
-  const QColor textColor = isDarkMode_ ? QColor("#F1F5F9") : QColor("#0F172A");
+  const QColor textColor = isDarkMode_ ? QColor("#F1F5F9") : QColor("#1F1F1F");
   const QColor placeholderColor =
-      isDarkMode_ ? QColor("#94A3B8") : QColor("#64748B");
+      isDarkMode_ ? QColor("#94A3B8") : QColor("#6B6B6B");
   const QColor inputBorder =
-      isDarkMode_ ? QColor(255, 255, 255, 28) : QColor(0, 0, 0, 22);
+      isDarkMode_ ? QColor(255, 255, 255, 28) : QColor(0, 0, 0, 12);
   const QColor selectionText = AccentForegroundColor(accent);
   QColor selectionBg = accent;
   selectionBg.setAlpha(isDarkMode_ ? 102 : 77);
 
   const QColor scrollbarHandle =
-      isDarkMode_ ? QColor(148, 163, 184, 120) : QColor(100, 116, 139, 120);
+      isDarkMode_ ? QColor(148, 163, 184, 120) : QColor(104, 104, 104, 96);
 
   QString themed = styleSource;
   themed.replace("@text_color", ToHexString(textColor));
@@ -550,18 +550,18 @@ void MainWindow::updatePanelBackground() {
     return;
   }
 
-  const QColor base = isDarkMode_ ? QColor("#202020") : QColor("#F3F3F3");
+  const QColor base = isDarkMode_ ? QColor("#202020") : QColor("#FAFAFA");
   QColor wallpaper = sampleWallpaperDominantColor();
   if (!wallpaper.isValid()) {
     wallpaper = base;
   }
 
-  const double tintRatio = isDarkMode_ ? 0.15 : 0.10;
+  const double tintRatio = isDarkMode_ ? 0.15 : 0.02;
   QColor mica = BlendColors(base, wallpaper, tintRatio);
-  mica.setAlpha(isDarkMode_ ? 242 : 248);
+  mica.setAlpha(isDarkMode_ ? 242 : 232);
 
   const QColor border =
-      isDarkMode_ ? QColor(255, 255, 255, 20) : QColor(0, 0, 0, 15);
+      isDarkMode_ ? QColor(255, 255, 255, 20) : QColor(255, 255, 255, 92);
   panel_->setThemeColors(mica, border, isDarkMode_);
 }
 
@@ -572,7 +572,7 @@ void MainWindow::updateDropShadow() {
 
   panelShadow_->setBlurRadius(48.0);
   panelShadow_->setOffset(0, 8);
-  panelShadow_->setColor(QColor(0, 0, 0, isDarkMode_ ? 102 : 38));
+  panelShadow_->setColor(QColor(0, 0, 0, isDarkMode_ ? 102 : 34));
 }
 
 bool MainWindow::isSystemDarkMode() const {
