@@ -362,6 +362,7 @@ MainWindow::~MainWindow() {
 }
 
 void MainWindow::setItems(const std::vector<StringItem> &items) {
+  items_ = items;
   searchEngine_.setItems(items);
   searchEngine_.setSearchPrefixes(DefaultSearchPrefixes());
   onQueryTextChanged(input_->text());
@@ -735,6 +736,7 @@ void MainWindow::setupHotkeyPlaceholder(bool enableHotkey) {
 ConfigLoadResult MainWindow::loadBackendItems() {
   const auto configRoot = FindConfigRoot();
   if (!configRoot.has_value()) {
+    items_.clear();
     searchEngine_.setItems({});
     searchEngine_.setSearchPrefixes(DefaultSearchPrefixes());
     ConfigLoadResult result;
@@ -745,6 +747,7 @@ ConfigLoadResult MainWindow::loadBackendItems() {
   }
 
   auto result = LoadConfigWithFallback(*configRoot);
+  items_ = result.items;
   searchEngine_.setItems(result.items);
   searchEngine_.setSearchPrefixes(result.searchPrefixes);
   onQueryTextChanged(input_->text());
@@ -761,6 +764,7 @@ void MainWindow::showPanel() {
   updateTheme();
 
   if (isVisible()) {
+    onQueryTextChanged(input_->text());
     raise();
     activateWindow();
     input_->setFocus();
@@ -770,6 +774,7 @@ void MainWindow::showPanel() {
 
   centerOnScreen();
   setWindowOpacity(1.0);
+  onQueryTextChanged(input_->text());
   show();
   raise();
   activateWindow();
@@ -919,6 +924,14 @@ void MainWindow::moveResultSelection(int delta) {
 }
 
 void MainWindow::onQueryTextChanged(const QString &text) {
+  if (text.trimmed().isEmpty()) {
+    resultsModel_->setResults(recentResultItems());
+    if (resultsModel_->rowCount() > 0) {
+      resultsView_->setCurrentIndex(resultsModel_->index(0, 0));
+    }
+    return;
+  }
+
   const SearchQueryInfo query = searchEngine_.parseQuery(text);
   const std::size_t resultLimit =
       query.prefixMode ? kPrefixModeMaxResults : kTopK;
@@ -928,6 +941,27 @@ void MainWindow::onQueryTextChanged(const QString &text) {
   if (resultsModel_->rowCount() > 0) {
     resultsView_->setCurrentIndex(resultsModel_->index(0, 0));
   }
+}
+
+std::vector<const StringItem *> MainWindow::recentResultItems() const {
+  std::vector<const StringItem *> results;
+  results.reserve(kTopK);
+
+  const std::vector<RecentItemKey> recent = recentItemsStore_.load();
+  for (const auto &key : recent) {
+    for (const auto &item : items_) {
+      if (SameRecentItemKey(key, RecentKeyForItem(item))) {
+        results.push_back(&item);
+        break;
+      }
+    }
+
+    if (results.size() >= kTopK) {
+      break;
+    }
+  }
+
+  return results;
 }
 
 void MainWindow::activateCurrentResult() {
@@ -972,7 +1006,10 @@ void MainWindow::invokeItemAction(const StringItem *item) {
   input_->clear();
   resultsModel_->setResults({});
 
-  QTimer::singleShot(0, this, [this, actionName, payload]() {
+  const RecentItemKey recentKey = RecentKeyForItem(*item);
+
+  QTimer::singleShot(0, this, [this, actionName, payload, recentKey]() {
     actionManager_.invoke(actionName, payload);
+    recentItemsStore_.recordUse(recentKey, kTopK);
   });
 }

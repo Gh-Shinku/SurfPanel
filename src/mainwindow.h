@@ -3,6 +3,7 @@
 
 #include "action_manager.h"
 #include "item.h"
+#include "recent_items_store.h"
 #include "search_engine.h"
 #include <QColor>
 #include <QMainWindow>
@@ -67,6 +68,7 @@ private:
   void toggleVisibilityFromHotkey();
   void moveResultSelection(int delta);
   void onQueryTextChanged(const QString &text);
+  std::vector<const StringItem *> recentResultItems() const;
   void activateCurrentResult();
   void activateIndex(const QModelIndex &index);
   void invokeItemAction(const StringItem *item);
@@ -90,6 +92,8 @@ private:
 
   SearchEngine searchEngine_;
   ActionManager actionManager_;
+  RecentItemsStore recentItemsStore_;
+  std::vector<StringItem> items_;
 
   static constexpr std::size_t kTopK = 6;
   static constexpr std::size_t kPrefixModeMaxResults = 128;
