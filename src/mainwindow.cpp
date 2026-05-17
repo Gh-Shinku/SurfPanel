@@ -112,11 +112,9 @@ private:
 class SearchResultItemDelegate final : public QStyledItemDelegate {
 public:
   explicit SearchResultItemDelegate(QObject *parent = nullptr)
-      : QStyledItemDelegate(parent), accentColor_(QColor("#005FB8")),
-        darkMode_(false) {}
+      : QStyledItemDelegate(parent), darkMode_(false) {}
 
-  void setTheme(const QColor &accentColor, bool darkMode) {
-    accentColor_ = accentColor;
+  void setTheme(bool darkMode) {
     darkMode_ = darkMode;
   }
 
@@ -130,23 +128,20 @@ public:
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing, true);
 
-    const QRect rowRect = option.rect.adjusted(8, 4, -8, -4);
+    const QRect rowRect = option.rect.adjusted(6, 2, -6, -2);
     const bool selected = (option.state & QStyle::State_Selected) != 0;
+    const bool hovered = (option.state & QStyle::State_MouseOver) != 0;
 
-    const QColor baseRowBg =
-        darkMode_ ? QColor(44, 44, 44, 230) : QColor(255, 255, 255, 195);
-    const QColor baseRowBorder =
-        darkMode_ ? QColor(255, 255, 255, 28) : QColor(148, 163, 184, 75);
-    QColor selectedBg = accentColor_;
-    selectedBg.setAlpha(darkMode_ ? 102 : 77);
-    QColor selectedBorder = accentColor_;
-    selectedBorder.setAlpha(darkMode_ ? 200 : 220);
-
-    const QColor rowBg = selected ? selectedBg : baseRowBg;
-    const QColor rowBorder = selected ? selectedBorder : baseRowBorder;
-    painter->setPen(QPen(rowBorder, 1));
-    painter->setBrush(rowBg);
-    painter->drawRoundedRect(rowRect, 4, 4);
+    if (selected || hovered) {
+      const QColor rowBg =
+          selected ? (darkMode_ ? QColor(255, 255, 255, 28)
+                                : QColor(0, 0, 0, 24))
+                   : (darkMode_ ? QColor(255, 255, 255, 14)
+                                : QColor(0, 0, 0, 12));
+      painter->setPen(Qt::NoPen);
+      painter->setBrush(rowBg);
+      painter->drawRoundedRect(rowRect, 6, 6);
+    }
 
     const QString name = index.data(Qt::DisplayRole).toString();
     const QString typeRaw =
@@ -154,52 +149,36 @@ public:
     const bool isUrl = typeRaw.compare("url", Qt::CaseInsensitive) == 0;
     const QString typeText = isUrl ? "URL" : "SNIPPET";
 
-    QColor tagBg = accentColor_;
-    if (!isUrl) {
-      tagBg = accentColor_.darker(115);
-    }
-    const QColor tagTextColor = AccentForegroundColor(accentColor_);
-
     QFont nameFont = option.font;
-    nameFont.setPointSizeF(11.5);
-    nameFont.setWeight(QFont::DemiBold);
+    nameFont.setPointSizeF(11.0);
+    nameFont.setWeight(QFont::Medium);
     painter->setFont(nameFont);
 
     const QFontMetrics nameMetrics(nameFont);
 
-    QFont tagFont = option.font;
-    tagFont.setPointSizeF(9.0);
-    tagFont.setWeight(QFont::Medium);
-    const QFontMetrics tagMetrics(tagFont);
+    QFont typeFont = option.font;
+    typeFont.setPointSizeF(9.0);
+    typeFont.setWeight(QFont::Medium);
+    const QFontMetrics typeMetrics(typeFont);
+    const int typeWidth = typeMetrics.horizontalAdvance(typeText);
+    const QRect typeRect(rowRect.right() - typeWidth - 14, rowRect.top(),
+                         typeWidth, rowRect.height());
 
-    const int tagPaddingX = 8;
-    const int tagHeight = 20;
-    const int tagWidth =
-        tagMetrics.horizontalAdvance(typeText) + tagPaddingX * 2;
-    const QRect tagRect(rowRect.right() - tagWidth - 12,
-                        rowRect.center().y() - tagHeight / 2, tagWidth,
-                        tagHeight);
-
-    painter->setFont(tagFont);
-    painter->setBrush(tagBg);
-    painter->setPen(Qt::NoPen);
-    painter->drawRoundedRect(tagRect, 4, 4);
-
-    painter->setPen(tagTextColor);
-    painter->drawText(tagRect, Qt::AlignCenter, typeText);
-
-    const QRect nameRect = rowRect.adjusted(14, 0, -tagWidth - 24, 0);
+    const QRect nameRect = rowRect.adjusted(14, 0, -typeWidth - 32, 0);
     painter->setFont(nameFont);
     painter->setPen(darkMode_ ? QColor("#F1F5F9") : QColor("#0F172A"));
     painter->drawText(
         nameRect, Qt::AlignVCenter | Qt::AlignLeft,
         nameMetrics.elidedText(name, Qt::ElideRight, nameRect.width()));
 
+    painter->setFont(typeFont);
+    painter->setPen(darkMode_ ? QColor(148, 163, 184) : QColor(100, 116, 139));
+    painter->drawText(typeRect, Qt::AlignVCenter | Qt::AlignRight, typeText);
+
     painter->restore();
   }
 
 private:
-  QColor accentColor_;
   bool darkMode_;
 };
 
@@ -517,12 +496,8 @@ void MainWindow::applyStylesheet() {
   const QColor textColor = isDarkMode_ ? QColor("#F1F5F9") : QColor("#0F172A");
   const QColor placeholderColor =
       isDarkMode_ ? QColor("#94A3B8") : QColor("#64748B");
-  const QColor inputBg =
-      isDarkMode_ ? QColor(48, 48, 48, 255) : QColor(255, 255, 255, 255);
-  const QColor inputBgFocus =
-      isDarkMode_ ? QColor(56, 56, 56, 255) : QColor(255, 255, 255, 255);
   const QColor inputBorder =
-      isDarkMode_ ? QColor(255, 255, 255, 25) : QColor(30, 41, 59, 35);
+      isDarkMode_ ? QColor(255, 255, 255, 28) : QColor(0, 0, 0, 22);
   const QColor selectionText = AccentForegroundColor(accent);
   QColor selectionBg = accent;
   selectionBg.setAlpha(isDarkMode_ ? 102 : 77);
@@ -531,11 +506,8 @@ void MainWindow::applyStylesheet() {
       isDarkMode_ ? QColor(148, 163, 184, 120) : QColor(100, 116, 139, 120);
 
   QString themed = styleSource;
-  themed.replace("@accent_color", ToHexString(accent));
   themed.replace("@text_color", ToHexString(textColor));
   themed.replace("@placeholder_color", ToHexString(placeholderColor));
-  themed.replace("@input_bg_focus", ToRgbaString(inputBgFocus));
-  themed.replace("@input_bg", ToRgbaString(inputBg));
   themed.replace("@input_border", ToRgbaString(inputBorder));
   themed.replace("@selection_bg", ToRgbaString(selectionBg));
   themed.replace("@selection_text", ToHexString(selectionText));
@@ -561,7 +533,7 @@ void MainWindow::updateTheme() {
     updateDropShadow();
 
     if (resultsDelegate_ != nullptr) {
-      resultsDelegate_->setTheme(accentColor_, isDarkMode_);
+      resultsDelegate_->setTheme(isDarkMode_);
     }
 
     if (resultsView_ != nullptr) {
@@ -577,7 +549,7 @@ void MainWindow::updatePanelBackground() {
     return;
   }
 
-  const QColor base = isDarkMode_ ? QColor("#1C1C1C") : QColor("#F3F3F3");
+  const QColor base = isDarkMode_ ? QColor("#202020") : QColor("#F3F3F3");
   QColor wallpaper = sampleWallpaperDominantColor();
   if (!wallpaper.isValid()) {
     wallpaper = base;

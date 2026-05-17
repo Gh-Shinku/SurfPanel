@@ -11,19 +11,21 @@ QMainWindow {
 }
 
 QLineEdit#searchInput {
-  background: @input_bg;
+  background: transparent;
   color: @text_color;
-  border: 1px solid @input_border;
-  border-radius: 4px;
-  padding: 12px 14px 12px 14px;
+  border: 0;
+  border-bottom: 1px solid @input_border;
+  border-radius: 0;
+  padding: 14px 12px 16px 12px;
   font-size: 15px;
   selection-background-color: @selection_bg;
   selection-color: @selection_text;
 }
 
 QLineEdit#searchInput:focus {
-  border: 1px solid @accent_color;
-  background: @input_bg_focus;
+  border: 0;
+  border-bottom: 1px solid @input_border;
+  background: transparent;
 }
 
 QLineEdit#searchInput::placeholder {
@@ -35,7 +37,7 @@ QListView#resultsList {
   outline: none;
   border: 0;
   color: @text_color;
-  padding: 2px;
+  padding: 4px 0 0 0;
 }
 
 QScrollBar:vertical {
@@ -57,4 +59,3 @@ QScrollBar::sub-page:vertical {
   background: transparent;
   border: none;
 }
-
