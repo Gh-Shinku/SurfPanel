@@ -9,6 +9,7 @@
 
 struct ConfigLoadResult {
   std::vector<StringItem> items;
+  std::vector<SearchPrefixRule> searchPrefixes;
   std::filesystem::path configRoot;
   std::filesystem::path profilePath;
   bool usedFallback = false;
@@ -16,6 +17,7 @@ struct ConfigLoadResult {
   std::string message;
 };
 
+std::vector<SearchPrefixRule> DefaultSearchPrefixes();
 std::optional<std::filesystem::path> FindConfigRoot();
 ConfigLoadResult LoadConfigFromRoot(const std::filesystem::path &configRoot);
 ConfigLoadResult

@@ -51,3 +51,10 @@ snippet = """
 2. 它如何解决这个问题？
 3. 有什么可以改进的方面？
 """
+
+[[items]]
+name = "date"
+type = "snippet"
+keywords = ["date", "time"]
+[items.payload]
+snippet = "{{date}}"

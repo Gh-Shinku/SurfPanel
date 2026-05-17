@@ -17,6 +17,24 @@ StringItem MakeUrlItem(const QString &name,
   return item;
 }
 
+StringItem MakeSnippetItem(const QString &name,
+                           const std::vector<QString> &keywords,
+                           const QString &snippet) {
+  StringItem item;
+  item.name = name;
+  item.type = "snippet";
+  item.keywords = keywords;
+  item.payload = SnippetPayload{snippet};
+  return item;
+}
+
+std::vector<SearchPrefixRule> DefaultPrefixes() {
+  return {
+      SearchPrefixRule{QString("snippet"), QString("s")},
+      SearchPrefixRule{QString("url"), QString("u")},
+  };
+}
+
 } // namespace
 
 TEST(SearchEngineTest, EmptyQueryReturnsNoResults) {
@@ -106,6 +124,78 @@ TEST(SearchEngineTest, ZeroKReturnsNoResults) {
   engine.setItems({MakeUrlItem("Open GitHub", {"git"}, "https://github.com")});
 
   ASSERT_EQ(std::size_t(0), engine.search("git", 0).size());
+}
+
+TEST(SearchEngineTest, PrefixFiltersSnippetsAndUsesRemainingQuery) {
+  SearchEngine engine;
+  engine.setSearchPrefixes(DefaultPrefixes());
+  engine.setItems({
+      MakeUrlItem("GitHub", {"git"}, "https://github.com"),
+      MakeSnippetItem("Git Snippet", {"git"}, "git status"),
+      MakeSnippetItem("Docker Snippet", {"docker"}, "docker ps"),
+  });
+
+  const auto results = engine.search("s git", 3);
+  ASSERT_EQ(std::size_t(1), results.size());
+  ASSERT_EQ(QString("Git Snippet"), results[0]->name);
+}
+
+TEST(SearchEngineTest, PrefixFiltersUrls) {
+  SearchEngine engine;
+  engine.setSearchPrefixes(DefaultPrefixes());
+  engine.setItems({
+      MakeUrlItem("GitHub", {"git"}, "https://github.com"),
+      MakeSnippetItem("Git Snippet", {"git"}, "git status"),
+  });
+
+  const auto results = engine.search("u git", 3);
+  ASSERT_EQ(std::size_t(1), results.size());
+  ASSERT_EQ(QString("GitHub"), results[0]->name);
+}
+
+TEST(SearchEngineTest, PrefixWithEmptyQueryShowsMatchingType) {
+  SearchEngine engine;
+  engine.setSearchPrefixes(DefaultPrefixes());
+  engine.setItems({
+      MakeSnippetItem("Beta Snippet", {"beta"}, "beta"),
+      MakeUrlItem("GitHub", {"git"}, "https://github.com"),
+      MakeSnippetItem("Alpha Snippet", {"alpha"}, "alpha"),
+  });
+
+  const auto results = engine.search("s ", 5);
+  ASSERT_EQ(std::size_t(2), results.size());
+  ASSERT_EQ(QString("Alpha Snippet"), results[0]->name);
+  ASSERT_EQ(QString("Beta Snippet"), results[1]->name);
+}
+
+TEST(SearchEngineTest, UnknownPrefixBehavesLikeOrdinarySearch) {
+  SearchEngine engine;
+  engine.setSearchPrefixes(DefaultPrefixes());
+  engine.setItems({
+      MakeUrlItem("x git", {"literal"}, "https://example.com"),
+      MakeSnippetItem("Git Snippet", {"git"}, "git status"),
+  });
+
+  const auto results = engine.search("x git", 3);
+  ASSERT_EQ(std::size_t(1), results.size());
+  ASSERT_EQ(QString("x git"), results[0]->name);
+}
+
+TEST(SearchEngineTest, CustomPrefixesOverrideDefaults) {
+  SearchEngine engine;
+  engine.setSearchPrefixes({
+      SearchPrefixRule{QString("snippet"), QString("clip")},
+      SearchPrefixRule{QString("url"), QString("web")},
+  });
+  engine.setItems({
+      MakeUrlItem("GitHub", {"git"}, "https://github.com"),
+      MakeSnippetItem("Git Snippet", {"git"}, "git status"),
+  });
+
+  const auto results = engine.search("clip git", 3);
+  ASSERT_EQ(std::size_t(1), results.size());
+  ASSERT_EQ(QString("Git Snippet"), results[0]->name);
+  ASSERT_EQ(std::size_t(0), engine.search("s git", 3).size());
 }
 
 int main() { return RUN_ALL_TESTS(); }

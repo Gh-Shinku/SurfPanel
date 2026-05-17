@@ -22,4 +22,9 @@ struct StringItem {
   Payload payload;
 };
 
+struct SearchPrefixRule {
+  QString itemType;
+  QString prefix;
+};
+
 #endif // SURFPANEL_ITEM_H

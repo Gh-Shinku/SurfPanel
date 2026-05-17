@@ -24,6 +24,18 @@ struct ParsedItem {
   bool disabled = false;
 };
 
+struct ProfileConfig {
+  std::vector<fs::path> sources;
+  std::vector<SearchPrefixRule> searchPrefixes;
+};
+
+std::vector<SearchPrefixRule> MakeDefaultSearchPrefixes() {
+  return {
+      SearchPrefixRule{QString("snippet"), QString("s")},
+      SearchPrefixRule{QString("url"), QString("u")},
+  };
+}
+
 std::string NormalizeKeyPart(const std::string &value) {
   return QString::fromStdString(value).toLower().toStdString();
 }
@@ -38,6 +50,28 @@ std::string BuildItemKey(const std::string &id, const QString &type,
     return "id:" + NormalizeKeyPart(id);
   }
   return "type:" + NormalizeKeyPart(type) + "|name:" + NormalizeKeyPart(name);
+}
+
+bool HasPrefixConflict(const std::vector<SearchPrefixRule> &rules,
+                       const QString &type, const QString &prefix) {
+  for (const auto &rule : rules) {
+    if (rule.itemType.compare(type, Qt::CaseInsensitive) != 0 &&
+        rule.prefix == prefix) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void UpsertPrefixRule(std::vector<SearchPrefixRule> *rules,
+                      const QString &type, const QString &prefix) {
+  for (auto &rule : *rules) {
+    if (rule.itemType.compare(type, Qt::CaseInsensitive) == 0) {
+      rule.prefix = prefix;
+      return;
+    }
+  }
+  rules->push_back(SearchPrefixRule{type.toLower(), prefix});
 }
 
 std::vector<QString> ParseKeywords(const toml::value &item) {
@@ -212,20 +246,60 @@ std::vector<fs::path> ExpandSourcePath(const fs::path &root,
   return {resolved};
 }
 
-std::vector<fs::path> ReadProfileSources(const fs::path &root,
-                                         const fs::path &profilePath) {
+ProfileConfig ReadProfileConfig(const fs::path &profilePath,
+                                std::vector<std::string> *warnings) {
   auto profile = toml::parse(profilePath, toml::spec::v(1, 1, 0));
+  ProfileConfig config;
+  config.searchPrefixes = MakeDefaultSearchPrefixes();
+
   const auto sourcesValue =
       toml::find_or(profile, "sources", toml::value{toml::array{}});
   if (!sourcesValue.is_array()) {
     throw std::runtime_error("sources must be an array of strings");
   }
 
-  std::vector<fs::path> sources;
   for (const auto &src : sourcesValue.as_array()) {
-    sources.push_back(fs::path(src.as_string()));
+    config.sources.push_back(fs::path(src.as_string()));
   }
-  return sources;
+
+  const auto searchValue =
+      toml::find_or(profile, "search", toml::value{toml::table{}});
+  if (!searchValue.is_table()) {
+    warnings->push_back("search must be a table; using default search config");
+    return config;
+  }
+
+  const auto prefixesValue =
+      toml::find_or(searchValue, "prefixes", toml::value{toml::table{}});
+  if (!prefixesValue.is_table()) {
+    warnings->push_back(
+        "search.prefixes must be a table; using default search prefixes");
+    return config;
+  }
+
+  for (const auto &entry : prefixesValue.as_table()) {
+    const QString type = QString::fromStdString(entry.first).toLower();
+    if (!entry.second.is_string()) {
+      warnings->push_back("Ignoring search prefix for " + entry.first +
+                          ": value must be a string");
+      continue;
+    }
+
+    const QString prefix = QString::fromStdString(entry.second.as_string());
+    if (prefix.isEmpty()) {
+      warnings->push_back("Ignoring empty search prefix for " + entry.first);
+      continue;
+    }
+    if (HasPrefixConflict(config.searchPrefixes, type, prefix)) {
+      warnings->push_back("Ignoring duplicate search prefix '" +
+                          prefix.toStdString() + "' for " + entry.first);
+      continue;
+    }
+
+    UpsertPrefixRule(&config.searchPrefixes, type, prefix);
+  }
+
+  return config;
 }
 
 std::optional<fs::path> FindProfilePath(const fs::path &root) {
@@ -306,6 +380,7 @@ ConfigLoadResult TryLoadFallback(const fs::path &configRoot,
                                  const std::string &previousMessage) {
   ConfigLoadResult fallback;
   fallback.configRoot = configRoot;
+  fallback.searchPrefixes = MakeDefaultSearchPrefixes();
   fallback.ok = false;
 
   const std::vector<fs::path> candidates = {
@@ -341,6 +416,10 @@ ConfigLoadResult TryLoadFallback(const fs::path &configRoot,
 
 } // namespace
 
+std::vector<SearchPrefixRule> DefaultSearchPrefixes() {
+  return MakeDefaultSearchPrefixes();
+}
+
 std::optional<fs::path> FindConfigRoot() {
   const QString appDir = QCoreApplication::applicationDirPath();
   const std::vector<fs::path> candidates = {
@@ -361,6 +440,7 @@ std::optional<fs::path> FindConfigRoot() {
 ConfigLoadResult LoadConfigFromRoot(const fs::path &configRoot) {
   ConfigLoadResult result;
   result.configRoot = configRoot;
+  result.searchPrefixes = MakeDefaultSearchPrefixes();
 
   std::vector<std::string> warnings;
   std::vector<fs::path> sourceEntries;
@@ -368,7 +448,10 @@ ConfigLoadResult LoadConfigFromRoot(const fs::path &configRoot) {
   if (const auto profilePath = FindProfilePath(configRoot); profilePath) {
     result.profilePath = *profilePath;
     try {
-      sourceEntries = ReadProfileSources(configRoot, *profilePath);
+      const ProfileConfig profileConfig =
+          ReadProfileConfig(*profilePath, &warnings);
+      sourceEntries = profileConfig.sources;
+      result.searchPrefixes = profileConfig.searchPrefixes;
     } catch (const std::exception &e) {
       warnings.push_back("Failed to read profile: " + profilePath->string() +
                          "\n" + e.what());

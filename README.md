@@ -51,7 +51,15 @@ sources = [
 	"defaults/items.toml",
 	"packages/my_pack/schema/items.toml"
 ]
+
+[search.prefixes]
+snippet = "s"
+url = "u"
 ```
+
+Search prefixes are optional. By default, `s ` searches only snippets and
+`u ` searches only URLs. Configure `[search.prefixes]` in the active profile to
+change those tokens.
 
 ### Packages
 

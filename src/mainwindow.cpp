@@ -416,6 +416,7 @@ MainWindow::~MainWindow() {
 
 void MainWindow::setItems(const std::vector<StringItem> &items) {
   searchEngine_.setItems(items);
+  searchEngine_.setSearchPrefixes(DefaultSearchPrefixes());
   onQueryTextChanged(input_->text());
 }
 
@@ -841,7 +842,9 @@ ConfigLoadResult MainWindow::loadBackendItems() {
   const auto configRoot = FindConfigRoot();
   if (!configRoot.has_value()) {
     searchEngine_.setItems({});
+    searchEngine_.setSearchPrefixes(DefaultSearchPrefixes());
     ConfigLoadResult result;
+    result.searchPrefixes = DefaultSearchPrefixes();
     result.ok = false;
     result.message = "Config directory not found.";
     return result;
@@ -849,6 +852,7 @@ ConfigLoadResult MainWindow::loadBackendItems() {
 
   auto result = LoadConfigWithFallback(*configRoot);
   searchEngine_.setItems(result.items);
+  searchEngine_.setSearchPrefixes(result.searchPrefixes);
   onQueryTextChanged(input_->text());
 
   if (!result.ok || result.usedFallback) {

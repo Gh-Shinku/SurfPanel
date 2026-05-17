@@ -37,6 +37,17 @@ const StringItem *FindItemByName(const std::vector<StringItem> &items,
   return nullptr;
 }
 
+const SearchPrefixRule *
+FindPrefixByType(const std::vector<SearchPrefixRule> &prefixes,
+                 const QString &type) {
+  for (const auto &prefix : prefixes) {
+    if (prefix.itemType.compare(type, Qt::CaseInsensitive) == 0) {
+      return &prefix;
+    }
+  }
+  return nullptr;
+}
+
 std::string CaptureRuntimeError(const std::function<void()> &fn) {
   try {
     fn();
@@ -218,6 +229,87 @@ snippet = "echo hello"
 
   const auto *docs = FindItemByName(result.items, "Docs");
   ASSERT_TRUE(docs == nullptr);
+
+  const auto *snippetPrefix = FindPrefixByType(result.searchPrefixes, "snippet");
+  const auto *urlPrefix = FindPrefixByType(result.searchPrefixes, "url");
+  ASSERT_NE(nullptr, snippetPrefix);
+  ASSERT_NE(nullptr, urlPrefix);
+  ASSERT_EQ(QString("s"), snippetPrefix->prefix);
+  ASSERT_EQ(QString("u"), urlPrefix->prefix);
+
+  fs::remove_all(root);
+}
+
+TEST(ConfigTest, ParsesProfileSearchPrefixes) {
+  const fs::path root =
+      fs::temp_directory_path() / "surfpanel_prefix_profile_root";
+  fs::remove_all(root);
+
+  WriteTomlFile(root / "defaults", "items.toml",
+                R"([[items]]
+name = "Open GitHub"
+type = "url"
+keywords = ["git"]
+[items.payload]
+url = "https://github.com"
+)");
+
+  WriteTomlFile(root / "profiles", "default.profile.toml",
+                R"(name = "Default"
+sources = ["defaults/items.toml"]
+
+[search.prefixes]
+snippet = "clip"
+url = "web"
+)");
+
+  const auto result = LoadConfigFromRoot(root);
+  ASSERT_TRUE(result.ok);
+
+  const auto *snippetPrefix = FindPrefixByType(result.searchPrefixes, "snippet");
+  const auto *urlPrefix = FindPrefixByType(result.searchPrefixes, "url");
+  ASSERT_NE(nullptr, snippetPrefix);
+  ASSERT_NE(nullptr, urlPrefix);
+  ASSERT_EQ(QString("clip"), snippetPrefix->prefix);
+  ASSERT_EQ(QString("web"), urlPrefix->prefix);
+
+  fs::remove_all(root);
+}
+
+TEST(ConfigTest, InvalidProfileSearchPrefixesWarnAndKeepDefaults) {
+  const fs::path root =
+      fs::temp_directory_path() / "surfpanel_invalid_prefix_profile_root";
+  fs::remove_all(root);
+
+  WriteTomlFile(root / "defaults", "items.toml",
+                R"([[items]]
+name = "Open GitHub"
+type = "url"
+keywords = ["git"]
+[items.payload]
+url = "https://github.com"
+)");
+
+  WriteTomlFile(root / "profiles", "default.profile.toml",
+                R"(name = "Default"
+sources = ["defaults/items.toml"]
+
+[search.prefixes]
+snippet = ""
+url = "s"
+)");
+
+  const auto result = LoadConfigFromRoot(root);
+  ASSERT_TRUE(result.ok);
+  ASSERT_CONTAINS(result.message, "Ignoring empty search prefix");
+  ASSERT_CONTAINS(result.message, "Ignoring duplicate search prefix");
+
+  const auto *snippetPrefix = FindPrefixByType(result.searchPrefixes, "snippet");
+  const auto *urlPrefix = FindPrefixByType(result.searchPrefixes, "url");
+  ASSERT_NE(nullptr, snippetPrefix);
+  ASSERT_NE(nullptr, urlPrefix);
+  ASSERT_EQ(QString("s"), snippetPrefix->prefix);
+  ASSERT_EQ(QString("u"), urlPrefix->prefix);
 
   fs::remove_all(root);
 }
