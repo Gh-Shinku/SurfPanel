@@ -11,7 +11,6 @@ struct ConfigLoadResult {
   std::vector<StringItem> items;
   std::vector<SearchPrefixRule> searchPrefixes;
   std::filesystem::path configRoot;
-  std::filesystem::path profilePath;
   bool usedFallback = false;
   bool ok = true;
   std::string message;

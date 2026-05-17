@@ -160,11 +160,11 @@ url = "https://github.com"
   fs::remove(path);
 }
 
-TEST(ConfigTest, ProfileSourcesMergePatchesAndOverrides) {
-  const fs::path root = fs::temp_directory_path() / "surfpanel_profile_root";
+TEST(ConfigTest, MainConfigLoadsItemsToml) {
+  const fs::path root = fs::temp_directory_path() / "surfpanel_main_root";
   fs::remove_all(root);
 
-  WriteTomlFile(root / "defaults", "items.toml",
+  WriteTomlFile(root, "items.toml",
                 R"([[items]]
 name = "Open GitHub"
 type = "url"
@@ -173,7 +173,68 @@ keywords = ["git"]
 url = "https://github.com"
 )");
 
-  WriteTomlFile(root / "packages" / "demo" / "schema", "items.toml",
+  const auto result = LoadConfigFromRoot(root);
+  ASSERT_TRUE(result.ok);
+  ASSERT_EQ(std::size_t(1), result.items.size());
+  ASSERT_EQ(QString("Open GitHub"), result.items[0].name);
+
+  fs::remove_all(root);
+}
+
+TEST(ConfigTest, MainConfigImportsPackagesAndAllowsLocalOverrides) {
+  const fs::path root = fs::temp_directory_path() / "surfpanel_import_root";
+  fs::remove_all(root);
+
+  WriteTomlFile(root / "packages" / "demo", "items.toml",
+                R"([[items]]
+name = "Docs"
+type = "url"
+keywords = ["docs"]
+[items.payload]
+url = "https://example.com/docs"
+
+[[items]]
+name = "Package Snippet"
+type = "snippet"
+keywords = ["package"]
+[items.payload]
+snippet = "from package"
+)");
+
+  WriteTomlFile(root, "items.toml",
+                R"(imports = ["packages/demo/items.toml"]
+
+[[items]]
+name = "Docs"
+type = "url"
+keywords = ["docs", "local"]
+[items.payload]
+url = "https://example.com/local-docs"
+)");
+
+  const auto result = LoadConfigFromRoot(root);
+  ASSERT_TRUE(result.ok);
+  ASSERT_EQ(std::size_t(2), result.items.size());
+
+  const auto *docs = FindItemByName(result.items, "Docs");
+  ASSERT_NE(nullptr, docs);
+  ASSERT_TRUE(std::holds_alternative<UrlPayload>(docs->payload));
+  ASSERT_EQ(QString("https://example.com/local-docs"),
+            std::get<UrlPayload>(docs->payload).url);
+
+  const auto *snippet = FindItemByName(result.items, "Package Snippet");
+  ASSERT_NE(nullptr, snippet);
+  ASSERT_TRUE(std::holds_alternative<SnippetPayload>(snippet->payload));
+
+  fs::remove_all(root);
+}
+
+TEST(ConfigTest, MainConfigCanDisableImportedItems) {
+  const fs::path root =
+      fs::temp_directory_path() / "surfpanel_import_disable_root";
+  fs::remove_all(root);
+
+  WriteTomlFile(root / "packages" / "demo", "items.toml",
                 R"([[items]]
 name = "Docs"
 type = "url"
@@ -182,81 +243,70 @@ keywords = ["docs"]
 url = "https://example.com/docs"
 )");
 
-  WriteTomlFile(root / "profiles", "default.profile.toml",
-                R"(name = "Default"
-sources = [
-  "defaults/items.toml",
-  "packages/demo/schema/items.toml"
-]
-)");
+  WriteTomlFile(root, "items.toml",
+                R"(imports = ["packages/demo/items.toml"]
 
-  WriteTomlFile(root / "user" / "patches", "disable_docs.toml",
-                R"([[items]]
+[[items]]
 name = "Docs"
 type = "url"
 disabled = true
 )");
 
-  WriteTomlFile(root / "user" / "overrides", "override.toml",
-                R"([[items]]
-name = "Open GitHub"
-type = "url"
-keywords = ["git", "code"]
-[items.payload]
-url = "https://example.com/github"
+  const auto result = LoadConfigFromRoot(root);
+  ASSERT_TRUE(result.ok);
+  ASSERT_EQ(std::size_t(0), result.items.size());
 
-[[items]]
-name = "Sample Snippet"
-type = "snippet"
-keywords = ["sample"]
+  const auto *docs = FindItemByName(result.items, "Docs");
+  ASSERT_TRUE(docs == nullptr);
+
+  fs::remove_all(root);
+}
+
+TEST(ConfigTest, ImportsCanLoadTomlDirectoriesInSortedOrder) {
+  const fs::path root = fs::temp_directory_path() / "surfpanel_import_dir_root";
+  fs::remove_all(root);
+
+  WriteTomlFile(root / "packages" / "demo", "b.toml",
+                R"([[items]]
+name = "Second"
+type = "url"
+keywords = ["second"]
 [items.payload]
-snippet = "echo hello"
+url = "https://example.com/second"
+)");
+  WriteTomlFile(root / "packages" / "demo", "a.toml",
+                R"([[items]]
+name = "First"
+type = "url"
+keywords = ["first"]
+[items.payload]
+url = "https://example.com/first"
+)");
+  WriteTomlFile(root, "items.toml",
+                R"(imports = ["packages/demo"]
 )");
 
   const auto result = LoadConfigFromRoot(root);
   ASSERT_TRUE(result.ok);
   ASSERT_EQ(std::size_t(2), result.items.size());
-
-  const auto *github = FindItemByName(result.items, "Open GitHub");
-  ASSERT_NE(nullptr, github);
-  ASSERT_TRUE(std::holds_alternative<UrlPayload>(github->payload));
-  ASSERT_EQ(QString("https://example.com/github"),
-            std::get<UrlPayload>(github->payload).url);
-
-  const auto *snippet = FindItemByName(result.items, "Sample Snippet");
-  ASSERT_NE(nullptr, snippet);
-  ASSERT_TRUE(std::holds_alternative<SnippetPayload>(snippet->payload));
-
-  const auto *docs = FindItemByName(result.items, "Docs");
-  ASSERT_TRUE(docs == nullptr);
-
-  const auto *snippetPrefix = FindPrefixByType(result.searchPrefixes, "snippet");
-  const auto *urlPrefix = FindPrefixByType(result.searchPrefixes, "url");
-  ASSERT_NE(nullptr, snippetPrefix);
-  ASSERT_NE(nullptr, urlPrefix);
-  ASSERT_EQ(QString("s"), snippetPrefix->prefix);
-  ASSERT_EQ(QString("u"), urlPrefix->prefix);
+  ASSERT_EQ(QString("First"), result.items[0].name);
+  ASSERT_EQ(QString("Second"), result.items[1].name);
 
   fs::remove_all(root);
 }
 
-TEST(ConfigTest, ParsesProfileSearchPrefixes) {
+TEST(ConfigTest, ParsesMainConfigSearchPrefixes) {
   const fs::path root =
-      fs::temp_directory_path() / "surfpanel_prefix_profile_root";
+      fs::temp_directory_path() / "surfpanel_prefix_main_root";
   fs::remove_all(root);
 
-  WriteTomlFile(root / "defaults", "items.toml",
+  WriteTomlFile(root, "items.toml",
                 R"([[items]]
 name = "Open GitHub"
 type = "url"
 keywords = ["git"]
 [items.payload]
 url = "https://github.com"
-)");
-
-  WriteTomlFile(root / "profiles", "default.profile.toml",
-                R"(name = "Default"
-sources = ["defaults/items.toml"]
 
 [search.prefixes]
 snippet = "clip"
@@ -266,7 +316,8 @@ url = "web"
   const auto result = LoadConfigFromRoot(root);
   ASSERT_TRUE(result.ok);
 
-  const auto *snippetPrefix = FindPrefixByType(result.searchPrefixes, "snippet");
+  const auto *snippetPrefix =
+      FindPrefixByType(result.searchPrefixes, "snippet");
   const auto *urlPrefix = FindPrefixByType(result.searchPrefixes, "url");
   ASSERT_NE(nullptr, snippetPrefix);
   ASSERT_NE(nullptr, urlPrefix);
@@ -276,23 +327,18 @@ url = "web"
   fs::remove_all(root);
 }
 
-TEST(ConfigTest, InvalidProfileSearchPrefixesWarnAndKeepDefaults) {
+TEST(ConfigTest, InvalidMainConfigSearchPrefixesWarnAndKeepDefaults) {
   const fs::path root =
-      fs::temp_directory_path() / "surfpanel_invalid_prefix_profile_root";
+      fs::temp_directory_path() / "surfpanel_invalid_prefix_main_root";
   fs::remove_all(root);
 
-  WriteTomlFile(root / "defaults", "items.toml",
+  WriteTomlFile(root, "items.toml",
                 R"([[items]]
 name = "Open GitHub"
 type = "url"
 keywords = ["git"]
 [items.payload]
 url = "https://github.com"
-)");
-
-  WriteTomlFile(root / "profiles", "default.profile.toml",
-                R"(name = "Default"
-sources = ["defaults/items.toml"]
 
 [search.prefixes]
 snippet = ""
@@ -304,7 +350,8 @@ url = "s"
   ASSERT_CONTAINS(result.message, "Ignoring empty search prefix");
   ASSERT_CONTAINS(result.message, "Ignoring duplicate search prefix");
 
-  const auto *snippetPrefix = FindPrefixByType(result.searchPrefixes, "snippet");
+  const auto *snippetPrefix =
+      FindPrefixByType(result.searchPrefixes, "snippet");
   const auto *urlPrefix = FindPrefixByType(result.searchPrefixes, "url");
   ASSERT_NE(nullptr, snippetPrefix);
   ASSERT_NE(nullptr, urlPrefix);
@@ -314,11 +361,36 @@ url = "s"
   fs::remove_all(root);
 }
 
+TEST(ConfigTest, MissingImportsWarnButValidMainConfigStillLoads) {
+  const fs::path root =
+      fs::temp_directory_path() / "surfpanel_missing_import_root";
+  fs::remove_all(root);
+
+  WriteTomlFile(root, "items.toml",
+                R"(imports = ["missing/items.toml"]
+
+[[items]]
+name = "Local"
+type = "url"
+keywords = ["local"]
+[items.payload]
+url = "https://example.com/local"
+)");
+
+  const auto result = LoadConfigFromRoot(root);
+  ASSERT_TRUE(result.ok);
+  ASSERT_CONTAINS(result.message, "Missing config source");
+  ASSERT_EQ(std::size_t(1), result.items.size());
+  ASSERT_EQ(QString("Local"), result.items[0].name);
+
+  fs::remove_all(root);
+}
+
 TEST(ConfigTest, FallbackUsesLastGoodOnFailure) {
   const fs::path root = fs::temp_directory_path() / "surfpanel_fallback_root";
   fs::remove_all(root);
 
-  WriteTomlFile(root / "cache", "last_good.toml",
+  WriteTomlFile(root / "cache", "compiled.toml",
                 R"([[items]]
 name = "Fallback"
 type = "url"
@@ -327,10 +399,7 @@ keywords = ["fallback"]
 url = "https://example.com"
 )");
 
-  WriteTomlFile(root / "profiles", "default.profile.toml",
-                R"(name = "Broken"
-sources = ["missing/items.toml"]
-)");
+  WriteTomlFile(root, "items.toml", "[[items]\n");
 
   const auto result = LoadConfigWithFallback(root);
   ASSERT_TRUE(result.ok);

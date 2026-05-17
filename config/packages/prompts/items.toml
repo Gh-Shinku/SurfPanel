@@ -1,0 +1,33 @@
+[[items]]
+name = "Explain Paper"
+type = "snippet"
+keywords = ["prompt", "paper", "explain"]
+[items.payload]
+snippet = """
+请按以下几个方面介绍这篇论文：
+1. 它尝试解决什么问题？
+2. 它的核心方法是什么？
+3. 它有哪些局限或可以改进的地方？
+"""
+
+[[items]]
+name = "Code Review Prompt"
+type = "snippet"
+keywords = ["prompt", "review", "code"]
+[items.payload]
+snippet = """
+请从正确性、边界条件、可维护性和测试覆盖四个方面 review 这段代码。
+优先指出可能导致实际 bug 的问题。
+"""
+
+[[items]]
+name = "Summarize Changes"
+type = "snippet"
+keywords = ["prompt", "summary", "changes"]
+[items.payload]
+snippet = """
+请总结这组改动：
+1. 用户可感知的行为变化
+2. 主要实现路径
+3. 仍需验证的风险点
+"""

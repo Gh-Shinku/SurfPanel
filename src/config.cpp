@@ -24,8 +24,8 @@ struct ParsedItem {
   bool disabled = false;
 };
 
-struct ProfileConfig {
-  std::vector<fs::path> sources;
+struct MainConfig {
+  std::vector<fs::path> imports;
   std::vector<SearchPrefixRule> searchPrefixes;
 };
 
@@ -63,8 +63,8 @@ bool HasPrefixConflict(const std::vector<SearchPrefixRule> &rules,
   return false;
 }
 
-void UpsertPrefixRule(std::vector<SearchPrefixRule> *rules,
-                      const QString &type, const QString &prefix) {
+void UpsertPrefixRule(std::vector<SearchPrefixRule> *rules, const QString &type,
+                      const QString &prefix) {
   for (auto &rule : *rules) {
     if (rule.itemType.compare(type, Qt::CaseInsensitive) == 0) {
       rule.prefix = prefix;
@@ -246,27 +246,14 @@ std::vector<fs::path> ExpandSourcePath(const fs::path &root,
   return {resolved};
 }
 
-ProfileConfig ReadProfileConfig(const fs::path &profilePath,
-                                std::vector<std::string> *warnings) {
-  auto profile = toml::parse(profilePath, toml::spec::v(1, 1, 0));
-  ProfileConfig config;
-  config.searchPrefixes = MakeDefaultSearchPrefixes();
-
-  const auto sourcesValue =
-      toml::find_or(profile, "sources", toml::value{toml::array{}});
-  if (!sourcesValue.is_array()) {
-    throw std::runtime_error("sources must be an array of strings");
-  }
-
-  for (const auto &src : sourcesValue.as_array()) {
-    config.sources.push_back(fs::path(src.as_string()));
-  }
-
+void ReadSearchPrefixes(const toml::value &root,
+                        std::vector<SearchPrefixRule> *rules,
+                        std::vector<std::string> *warnings) {
   const auto searchValue =
-      toml::find_or(profile, "search", toml::value{toml::table{}});
+      toml::find_or(root, "search", toml::value{toml::table{}});
   if (!searchValue.is_table()) {
     warnings->push_back("search must be a table; using default search config");
-    return config;
+    return;
   }
 
   const auto prefixesValue =
@@ -274,7 +261,7 @@ ProfileConfig ReadProfileConfig(const fs::path &profilePath,
   if (!prefixesValue.is_table()) {
     warnings->push_back(
         "search.prefixes must be a table; using default search prefixes");
-    return config;
+    return;
   }
 
   for (const auto &entry : prefixesValue.as_table()) {
@@ -290,30 +277,39 @@ ProfileConfig ReadProfileConfig(const fs::path &profilePath,
       warnings->push_back("Ignoring empty search prefix for " + entry.first);
       continue;
     }
-    if (HasPrefixConflict(config.searchPrefixes, type, prefix)) {
+    if (HasPrefixConflict(*rules, type, prefix)) {
       warnings->push_back("Ignoring duplicate search prefix '" +
                           prefix.toStdString() + "' for " + entry.first);
       continue;
     }
 
-    UpsertPrefixRule(&config.searchPrefixes, type, prefix);
+    UpsertPrefixRule(rules, type, prefix);
   }
-
-  return config;
 }
 
-std::optional<fs::path> FindProfilePath(const fs::path &root) {
-  const fs::path active = root / "profiles" / "active.profile.toml";
-  if (fs::exists(active)) {
-    return active;
+MainConfig ReadMainConfig(const fs::path &mainPath,
+                          std::vector<std::string> *warnings) {
+  auto root = toml::parse(mainPath, toml::spec::v(1, 1, 0));
+  MainConfig config;
+  config.searchPrefixes = MakeDefaultSearchPrefixes();
+
+  const auto importsValue =
+      toml::find_or(root, "imports", toml::value{toml::array{}});
+  if (!importsValue.is_array()) {
+    throw std::runtime_error("imports must be an array of strings");
   }
 
-  const fs::path fallback = root / "profiles" / "default.profile.toml";
-  if (fs::exists(fallback)) {
-    return fallback;
+  for (const auto &importEntry : importsValue.as_array()) {
+    if (!importEntry.is_string()) {
+      warnings->push_back("Ignoring config import: value must be a string");
+      continue;
+    }
+    config.imports.push_back(fs::path(importEntry.as_string()));
   }
 
-  return std::nullopt;
+  ReadSearchPrefixes(root, &config.searchPrefixes, warnings);
+
+  return config;
 }
 
 std::string JoinMessages(const std::vector<std::string> &messages) {
@@ -384,9 +380,7 @@ ConfigLoadResult TryLoadFallback(const fs::path &configRoot,
   fallback.ok = false;
 
   const std::vector<fs::path> candidates = {
-      configRoot / "cache" / "last_good.toml",
-      configRoot / "defaults" / "items.toml",
-      configRoot / "test.toml",
+      configRoot / "cache" / "compiled.toml",
   };
 
   for (const auto &candidate : candidates) {
@@ -444,32 +438,29 @@ ConfigLoadResult LoadConfigFromRoot(const fs::path &configRoot) {
 
   std::vector<std::string> warnings;
   std::vector<fs::path> sourceEntries;
+  const fs::path mainPath = configRoot / "items.toml";
 
-  if (const auto profilePath = FindProfilePath(configRoot); profilePath) {
-    result.profilePath = *profilePath;
-    try {
-      const ProfileConfig profileConfig =
-          ReadProfileConfig(*profilePath, &warnings);
-      sourceEntries = profileConfig.sources;
-      result.searchPrefixes = profileConfig.searchPrefixes;
-    } catch (const std::exception &e) {
-      warnings.push_back("Failed to read profile: " + profilePath->string() +
-                         "\n" + e.what());
-    }
+  if (!fs::exists(mainPath)) {
+    result.ok = false;
+    result.message = "Config file not found: " + mainPath.string();
+    return result;
   }
 
-  if (sourceEntries.empty()) {
-    const fs::path defaultsPath = configRoot / "defaults" / "items.toml";
-    if (fs::exists(defaultsPath)) {
-      sourceEntries.push_back(defaultsPath);
-      warnings.push_back("Profile missing or empty; using defaults/items.toml");
-    } else {
-      const fs::path legacyPath = configRoot / "test.toml";
-      if (fs::exists(legacyPath)) {
-        sourceEntries.push_back(legacyPath);
-        warnings.push_back("Profile missing; using legacy test.toml");
-      }
-    }
+  try {
+    const MainConfig mainConfig = ReadMainConfig(mainPath, &warnings);
+    sourceEntries = mainConfig.imports;
+    sourceEntries.push_back(mainPath);
+    result.searchPrefixes = mainConfig.searchPrefixes;
+  } catch (const toml::syntax_error &err) {
+    result.ok = false;
+    result.message = "TOML parse error in " + mainPath.string() + ":\n" +
+                     std::string(err.what());
+    return result;
+  } catch (const std::exception &e) {
+    result.ok = false;
+    result.message =
+        "Failed to read config: " + mainPath.string() + "\n" + e.what();
+    return result;
   }
 
   std::vector<StringItem> mergedItems;
@@ -493,33 +484,8 @@ ConfigLoadResult LoadConfigFromRoot(const fs::path &configRoot) {
 
   if (loadedSources == 0) {
     result.ok = false;
-    result.message =
-        "No config sources loaded. Check your profile and defaults.";
+    result.message = "No config sources loaded. Check items.toml and imports.";
     return result;
-  }
-
-  const fs::path patchDir = configRoot / "user" / "patches";
-  const auto patchFiles = ListTomlFiles(patchDir);
-  for (const auto &patchFile : patchFiles) {
-    try {
-      const auto parsed = ParseItemsFile(patchFile);
-      ApplyParsedItems(&mergedItems, &mergedKeys, &index, parsed);
-    } catch (const std::exception &e) {
-      warnings.push_back("Failed to load patch: " + patchFile.string() + "\n" +
-                         e.what());
-    }
-  }
-
-  const fs::path overrideDir = configRoot / "user" / "overrides";
-  const auto overrideFiles = ListTomlFiles(overrideDir);
-  for (const auto &overrideFile : overrideFiles) {
-    try {
-      const auto parsed = ParseItemsFile(overrideFile);
-      ApplyParsedItems(&mergedItems, &mergedKeys, &index, parsed);
-    } catch (const std::exception &e) {
-      warnings.push_back("Failed to load override: " + overrideFile.string() +
-                         "\n" + e.what());
-    }
   }
 
   result.items = std::move(mergedItems);
@@ -529,13 +495,9 @@ ConfigLoadResult LoadConfigFromRoot(const fs::path &configRoot) {
   std::error_code ec;
   fs::create_directories(cacheDir, ec);
 
-  const fs::path compiledPath = cacheDir / "compiled.toml";
-  const fs::path lastGoodPath = cacheDir / "last_good.toml";
+  const fs::path lastGoodPath = cacheDir / "compiled.toml";
 
   std::string cacheError;
-  if (!WriteItemsToToml(compiledPath, result.items, &cacheError)) {
-    warnings.push_back(cacheError);
-  }
   if (!WriteItemsToToml(lastGoodPath, result.items, &cacheError)) {
     warnings.push_back(cacheError);
   }

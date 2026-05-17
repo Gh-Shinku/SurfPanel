@@ -1,3 +1,7 @@
+imports = [
+	"packages/prompts/items.toml"
+]
+
 [[items]]
 name = "CppReference"
 type = "url"
@@ -58,3 +62,10 @@ type = "snippet"
 keywords = ["date", "time"]
 [items.payload]
 snippet = "{{date}}"
+
+[[items]]
+name = "test"
+type = "snippet"
+keywords = ["test"]
+[items.payload]
+snippet = "test"
