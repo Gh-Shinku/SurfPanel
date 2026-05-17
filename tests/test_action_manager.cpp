@@ -1,5 +1,6 @@
 #include "action_manager.h"
 #include "test_harness.h"
+#include <QRegularExpression>
 #include <QObject>
 #include <QString>
 #include <QVariant>
@@ -93,6 +94,37 @@ TEST(ActionManagerTest, InjectActionWritesClipboardAndInput) {
   ASSERT_EQ(1, context.injectCallCount);
   ASSERT_EQ(QString("hello world"), context.lastClipboardText);
   ASSERT_EQ(QString("hello world"), context.lastInjectedText);
+}
+
+TEST(ActionManagerTest, InjectActionExpandsVariablesAtInvocation) {
+  ActionManager manager;
+  FakeActionContext context;
+
+  ASSERT_TRUE(manager.registerAction(ActionManager::kInjectContentAction,
+                                     std::make_unique<InjectContentAction>()));
+  ASSERT_TRUE(manager.invoke(ActionManager::kInjectContentAction,
+                             "generated {{datetime}}", context));
+
+  ASSERT_EQ(1, context.clipboardCallCount);
+  ASSERT_EQ(1, context.injectCallCount);
+  ASSERT_TRUE(context.lastInjectedText.contains(
+      QRegularExpression("^generated \\d{4}/\\d{2}/\\d{2} "
+                         "\\d{2}:\\d{2}:\\d{2}$")));
+  ASSERT_EQ(context.lastInjectedText, context.lastClipboardText);
+}
+
+TEST(ActionManagerTest, OpenUrlActionExpandsVariablesAtInvocation) {
+  ActionManager manager;
+  FakeActionContext context;
+
+  ASSERT_TRUE(manager.registerAction(ActionManager::kOpenUrlAction,
+                                     std::make_unique<OpenUrlAction>()));
+  ASSERT_TRUE(manager.invoke(ActionManager::kOpenUrlAction,
+                             "https://example.com/{{date}}", context));
+
+  ASSERT_EQ(1, context.openUrlCallCount);
+  ASSERT_TRUE(context.lastUrl.toString().contains(
+      QRegularExpression("^https://example\\.com/\\d{4}/\\d{2}/\\d{2}$")));
 }
 
 TEST(ActionManagerTest, InjectActionFailsIfInputInjectionFails) {

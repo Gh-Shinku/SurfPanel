@@ -1,4 +1,5 @@
 #include "action_manager.h"
+#include "variable_resolver.h"
 #include <QClipboard>
 #include <QDesktopServices>
 #include <QGuiApplication>
@@ -139,7 +140,7 @@ bool ActionManager::invoke(const std::string &name, const QString &payload,
     return false;
   }
 
-  return iter->second->invoke(payload, context);
+  return iter->second->invoke(ResolveVariables(payload), context);
 }
 
 void RegisterDefaultActions(ActionManager *manager) {

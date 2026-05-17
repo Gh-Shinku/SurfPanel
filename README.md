@@ -93,6 +93,17 @@ url = "https://example.com/github"
 Use the tray menu option **Reload Config** to re-read the profile, packages,
 and user overrides without restarting the app.
 
+### Realtime Variables
+
+URL and snippet payloads can include realtime variables. SurfPanel resolves
+these when you activate an item, using the local system time:
+
+- `{{date}}`: current date as `yyyy/MM/dd`
+- `{{time}}`: current time as `HH:mm:ss`
+- `{{datetime}}`: current date and time as `yyyy/MM/dd HH:mm:ss`
+
+Unknown variables are left unchanged.
+
 ### Fallback Behavior
 
 If config loading fails, SurfPanel falls back to `cache/last_good.toml`, then

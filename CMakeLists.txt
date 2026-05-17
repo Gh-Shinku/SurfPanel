@@ -24,6 +24,7 @@ add_executable(SurfPanel WIN32)
 target_sources(SurfPanel
   PRIVATE
   src/action_manager.cpp
+  src/variable_resolver.cpp
   src/main.cpp
   src/mainwindow.cpp
   src/resources.qrc
