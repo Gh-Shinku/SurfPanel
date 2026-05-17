@@ -6,6 +6,7 @@
 #define MyAppURL "https://github.com/shinku/SurfPanel"
 #define MyAppExeName "SurfPanel.exe"
 #define MyAppId "{{4D2F8EC0-8A04-43EF-B8C8-D8F847A16D96}}"
+#define MyAppUninstallKey "Software\Microsoft\Windows\CurrentVersion\Uninstall\{4D2F8EC0-8A04-43EF-B8C8-D8F847A16D96}_is1"
 #define MyProjectRoot SourcePath
 #define MyMingwRoot "C:\Users\shinku\AppData\Local\msys2\mingw64"
 #define MyMingwBin AddBackslash(MyMingwRoot) + "bin"
@@ -62,9 +63,6 @@ Source: "{#MyBuildDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyBuildDir}\Qt6Core.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyBuildDir}\Qt6Gui.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyBuildDir}\Qt6Widgets.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#MyBuildDir}\D3Dcompiler_47.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "{#MyBuildDir}\dxcompiler.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "{#MyBuildDir}\dxil.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 ; MinGW runtime DLLs referenced by ldd (from MSYS2 mingw64\bin)
 Source: "{#MyMingwBin}\libgcc_s_seh-1.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
@@ -76,8 +74,6 @@ Source: "{#MyMingwBin}\libharfbuzz-0.dll"; DestDir: "{app}"; Flags: ignoreversio
 Source: "{#MyMingwBin}\libpng16-16.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#MyMingwBin}\zlib1.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#MyMingwBin}\libb2-1.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "{#MyMingwBin}\libicuin78.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "{#MyMingwBin}\libicuuc78.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#MyMingwBin}\libdouble-conversion.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#MyMingwBin}\libpcre2-16-0.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#MyMingwBin}\libzstd.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
@@ -87,7 +83,6 @@ Source: "{#MyMingwBin}\libglib-2.0-0.dll"; DestDir: "{app}"; Flags: ignoreversio
 Source: "{#MyMingwBin}\libgraphite2.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#MyMingwBin}\libbrotlicommon.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#MyMingwBin}\libintl-8.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "{#MyMingwBin}\libicudt78.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#MyMingwBin}\libpcre2-8-0.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#MyMingwBin}\libiconv-2.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
@@ -106,3 +101,189 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+var
+  PreviousInstallDir: string;
+  PreviousUninstallerPath: string;
+  ConfigBackupDir: string;
+  KeepExistingConfig: Boolean;
+
+function QueryExistingInstallValue(ValueName: string; var Value: string): Boolean;
+begin
+  Result :=
+    RegQueryStringValue(HKCU, '{#MyAppUninstallKey}', ValueName, Value) or
+    RegQueryStringValue(HKLM, '{#MyAppUninstallKey}', ValueName, Value);
+end;
+
+function ExtractExecutablePath(CommandLine: string): string;
+var
+  EndQuotePos: Integer;
+  SpacePos: Integer;
+begin
+  CommandLine := Trim(CommandLine);
+  Result := CommandLine;
+
+  if CommandLine = '' then
+    exit;
+
+  if Copy(CommandLine, 1, 1) = '"' then begin
+    Delete(CommandLine, 1, 1);
+    EndQuotePos := Pos('"', CommandLine);
+    if EndQuotePos > 0 then
+      Result := Copy(CommandLine, 1, EndQuotePos - 1)
+    else
+      Result := CommandLine;
+  end else begin
+    SpacePos := Pos(' ', CommandLine);
+    if SpacePos > 0 then
+      Result := Copy(CommandLine, 1, SpacePos - 1);
+  end;
+end;
+
+function CopyDirectoryRecursive(SourceDir: string; DestDir: string): Boolean;
+var
+  FindRec: TFindRec;
+  SourcePath: string;
+  DestPath: string;
+begin
+  Result := True;
+
+  if not DirExists(SourceDir) then
+    exit;
+
+  if not ForceDirectories(DestDir) then begin
+    Result := False;
+    exit;
+  end;
+
+  if FindFirst(AddBackslash(SourceDir) + '*', FindRec) then begin
+    try
+      repeat
+        if (FindRec.Name <> '.') and (FindRec.Name <> '..') then begin
+          SourcePath := AddBackslash(SourceDir) + FindRec.Name;
+          DestPath := AddBackslash(DestDir) + FindRec.Name;
+
+          if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then begin
+            if not CopyDirectoryRecursive(SourcePath, DestPath) then
+              Result := False;
+          end else begin
+            if not FileCopy(SourcePath, DestPath, False) then
+              Result := False;
+          end;
+        end;
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+end;
+
+function UninstallExistingVersion(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+
+  if PreviousUninstallerPath = '' then
+    exit;
+
+  if not FileExists(PreviousUninstallerPath) then begin
+    MsgBox('Existing {#MyAppName} uninstaller was not found:' + #13#10 +
+      PreviousUninstallerPath, mbError, MB_OK);
+    Result := False;
+    exit;
+  end;
+
+  Result := Exec(
+    PreviousUninstallerPath,
+    '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS',
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode);
+
+  if (not Result) or (ResultCode <> 0) then begin
+    MsgBox('Failed to uninstall the existing {#MyAppName} installation.' + #13#10 +
+      'Exit code: ' + IntToStr(ResultCode), mbError, MB_OK);
+    Result := False;
+  end;
+end;
+
+function FindExistingInstallation(): Boolean;
+var
+  UninstallString: string;
+begin
+  Result := False;
+  PreviousInstallDir := '';
+  PreviousUninstallerPath := '';
+
+  if QueryExistingInstallValue('UninstallString', UninstallString) then begin
+    PreviousUninstallerPath := ExtractExecutablePath(UninstallString);
+    Result := PreviousUninstallerPath <> '';
+  end;
+
+  QueryExistingInstallValue('InstallLocation', PreviousInstallDir);
+  if (PreviousInstallDir = '') and (PreviousUninstallerPath <> '') then
+    PreviousInstallDir := ExtractFileDir(PreviousUninstallerPath);
+
+  if (not Result) and FileExists(ExpandConstant('{autopf}\{#MyAppName}\unins000.exe')) then begin
+    PreviousInstallDir := ExpandConstant('{autopf}\{#MyAppName}');
+    PreviousUninstallerPath := AddBackslash(PreviousInstallDir) + 'unins000.exe';
+    Result := True;
+  end;
+end;
+
+function InitializeSetup(): Boolean;
+var
+  PreviousConfigDir: string;
+begin
+  Result := True;
+  KeepExistingConfig := False;
+  PreviousInstallDir := '';
+  PreviousUninstallerPath := '';
+  ConfigBackupDir := ExpandConstant('{tmp}\{#MyAppName}_config_backup');
+
+  if not FindExistingInstallation() then
+    exit;
+
+  if PreviousInstallDir <> '' then
+    PreviousConfigDir := AddBackslash(PreviousInstallDir) + 'config'
+  else
+    PreviousConfigDir := '';
+
+  KeepExistingConfig := False;
+  if (PreviousConfigDir <> '') and DirExists(PreviousConfigDir) then begin
+    KeepExistingConfig :=
+      MsgBox('A previous {#MyAppName} installation was found.' + #13#10#13#10 +
+        'Do you want to keep the existing config directory?',
+        mbConfirmation, MB_YESNO) = IDYES;
+
+    if KeepExistingConfig then begin
+      DelTree(ConfigBackupDir, True, True, True);
+      if not CopyDirectoryRecursive(PreviousConfigDir, ConfigBackupDir) then begin
+        MsgBox('Failed to back up the existing config directory.', mbError, MB_OK);
+        Result := False;
+        exit;
+      end;
+    end;
+  end;
+
+  if not UninstallExistingVersion() then begin
+    Result := False;
+    exit;
+  end;
+
+  if (not KeepExistingConfig) and (PreviousConfigDir <> '') and DirExists(PreviousConfigDir) then
+    DelTree(PreviousConfigDir, True, True, True);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if (CurStep = ssPostInstall) and KeepExistingConfig and DirExists(ConfigBackupDir) then begin
+    if not CopyDirectoryRecursive(ConfigBackupDir, ExpandConstant('{app}\config')) then
+      MsgBox('Failed to restore the existing config directory.', mbError, MB_OK);
+
+    DelTree(ConfigBackupDir, True, True, True);
+  end;
+end;
