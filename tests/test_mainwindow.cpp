@@ -201,7 +201,7 @@ TEST(MainWindowTest, ShowPanelRefreshesEmptyQueryHomepage) {
   ResetRecentCache();
 }
 
-TEST(MainWindowTest, SnippetActivationIsRecordedInRecentCache) {
+TEST(MainWindowTest, FailedSnippetActivationIsNotRecordedInRecentCache) {
   ResetRecentCache();
 
   MainWindow window(nullptr, false);
@@ -222,9 +222,7 @@ TEST(MainWindowTest, SnippetActivationIsRecordedInRecentCache) {
 
   RecentItemsStore store(DefaultRecentItemsPath());
   const auto recent = store.load();
-  ASSERT_EQ(std::size_t(1), recent.size());
-  ASSERT_EQ(QString("snippet"), recent[0].type);
-  ASSERT_EQ(QString("Today"), recent[0].name);
+  ASSERT_EQ(std::size_t(0), recent.size());
 
   ResetRecentCache();
 }

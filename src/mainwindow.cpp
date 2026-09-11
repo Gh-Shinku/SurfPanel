@@ -1009,7 +1009,14 @@ void MainWindow::invokeItemAction(const StringItem *item) {
   const RecentItemKey recentKey = RecentKeyForItem(*item);
 
   QTimer::singleShot(0, this, [this, actionName, payload, recentKey]() {
-    actionManager_.invoke(actionName, payload);
-    recentItemsStore_.recordUse(recentKey, kTopK);
+    if (!actionManager_.invoke(actionName, payload)) {
+      qWarning() << "Failed to invoke action:"
+                 << QString::fromStdString(actionName);
+      return;
+    }
+
+    if (!recentItemsStore_.recordUse(recentKey, kTopK)) {
+      qWarning() << "Failed to record recently used item:" << recentKey.name;
+    }
   });
 }
