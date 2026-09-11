@@ -31,6 +31,11 @@ struct ClipboardReadResult {
   ClipboardContent content;
 };
 
+struct ClipboardUpdateContext {
+  QString sourceProcessName;
+  quint32 sequenceNumber = 0;
+};
+
 class SourceMatcher {
 public:
   void setSourceProcesses(const std::vector<QString> &sourceProcesses);
@@ -61,7 +66,9 @@ public:
   explicit ClipboardProcessor(const TextTransformer &transformer);
 
   void setConfiguration(const ClipboardFilterConfig &config);
-  ClipboardProcessResult process(ClipboardBackend *backend);
+  ClipboardProcessResult process(ClipboardBackend *backend,
+                                 const std::optional<ClipboardUpdateContext>
+                                     &updateContext = std::nullopt);
 
 private:
   SourceMatcher sourceMatcher_;
@@ -84,7 +91,7 @@ public:
                          qintptr *result) override;
 
 private:
-  void scheduleProcessing(int attempt);
+  void scheduleProcessing(int attempt, ClipboardUpdateContext updateContext);
   void log(QtMsgType type, const QString &message) const;
 
   ClipboardFilterConfig config_;

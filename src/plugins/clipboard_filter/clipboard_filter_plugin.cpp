@@ -251,14 +251,21 @@ void ClipboardProcessor::setConfiguration(const ClipboardFilterConfig &config) {
   selfWrittenSequence_.reset();
 }
 
-ClipboardProcessResult ClipboardProcessor::process(ClipboardBackend *backend) {
+ClipboardProcessResult ClipboardProcessor::process(
+    ClipboardBackend *backend,
+    const std::optional<ClipboardUpdateContext> &updateContext) {
   if (!enabled_ || backend == nullptr) {
     return ClipboardProcessResult::Ignored;
   }
 
-  const ClipboardReadResult read = backend->read();
+  ClipboardReadResult read = backend->read();
   if (read.status == ClipboardReadStatus::Busy) {
     return ClipboardProcessResult::Retry;
+  }
+  if (updateContext.has_value() &&
+      updateContext->sequenceNumber == read.content.sequenceNumber &&
+      read.content.ownerProcessName.isEmpty()) {
+    read.content.ownerProcessName = updateContext->sourceProcessName;
   }
   if (read.status != ClipboardReadStatus::Ready ||
       selfWrittenSequence_ == read.content.sequenceNumber ||
@@ -374,8 +381,15 @@ bool ClipboardFilterPlugin::handleNativeEvent(const QByteArray &eventType,
     return false;
   }
   if (!processing_) {
+    ClipboardUpdateContext updateContext;
+    updateContext.sourceProcessName = ProcessNameForWindow(GetClipboardOwner());
+    if (updateContext.sourceProcessName.isEmpty()) {
+      updateContext.sourceProcessName =
+          ProcessNameForWindow(GetForegroundWindow());
+    }
+    updateContext.sequenceNumber = GetClipboardSequenceNumber();
     processing_ = true;
-    scheduleProcessing(0);
+    scheduleProcessing(0, std::move(updateContext));
   }
   return true;
 #else
@@ -384,25 +398,29 @@ bool ClipboardFilterPlugin::handleNativeEvent(const QByteArray &eventType,
 #endif
 }
 
-void ClipboardFilterPlugin::scheduleProcessing(int attempt) {
+void ClipboardFilterPlugin::scheduleProcessing(
+    int attempt, ClipboardUpdateContext updateContext) {
   const int generation = generation_;
   const int delay = attempt == 0 ? 0 : kClipboardRetryDelayMs;
-  QTimer::singleShot(delay, this, [this, generation, attempt]() {
-    if (generation != generation_ || !listening_) {
-      return;
-    }
+  QTimer::singleShot(
+      delay, this,
+      [this, generation, attempt, updateContext = std::move(updateContext)]() {
+        if (generation != generation_ || !listening_) {
+          return;
+        }
 
-    const ClipboardProcessResult result = processor_.process(backend_.get());
-    if (result == ClipboardProcessResult::Retry &&
-        attempt < kClipboardMaxRetries) {
-      scheduleProcessing(attempt + 1);
-      return;
-    }
-    if (result == ClipboardProcessResult::WriteFailed) {
-      log(QtWarningMsg, "failed to write filtered clipboard text");
-    }
-    processing_ = false;
-  });
+        const ClipboardProcessResult result =
+            processor_.process(backend_.get(), updateContext);
+        if (result == ClipboardProcessResult::Retry &&
+            attempt < kClipboardMaxRetries) {
+          scheduleProcessing(attempt + 1, updateContext);
+          return;
+        }
+        if (result == ClipboardProcessResult::WriteFailed) {
+          log(QtWarningMsg, "failed to write filtered clipboard text");
+        }
+        processing_ = false;
+      });
 }
 
 void ClipboardFilterPlugin::log(QtMsgType type, const QString &message) const {

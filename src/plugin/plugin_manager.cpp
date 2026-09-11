@@ -1,5 +1,6 @@
 #include "plugin_manager.h"
 
+#include <QCoreApplication>
 #include <QDebug>
 #include <algorithm>
 #include <exception>
@@ -50,6 +51,10 @@ bool PluginManager::registerPlugin(std::unique_ptr<IPlugin> plugin) {
 void PluginManager::initialize(PluginHostContext context) {
   shutdown();
   hostContext_ = std::move(context);
+  if (QCoreApplication::instance() != nullptr) {
+    QCoreApplication::instance()->installNativeEventFilter(this);
+    nativeEventFilterInstalled_ = true;
+  }
   initialized_ = true;
 }
 
@@ -124,6 +129,10 @@ void PluginManager::shutdown() {
   for (auto entry = entries_.rbegin(); entry != entries_.rend(); ++entry) {
     stopEntry(&*entry);
   }
+  if (nativeEventFilterInstalled_ && QCoreApplication::instance() != nullptr) {
+    QCoreApplication::instance()->removeNativeEventFilter(this);
+  }
+  nativeEventFilterInstalled_ = false;
   initialized_ = false;
   hostContext_ = PluginHostContext{};
 }
@@ -146,6 +155,11 @@ bool PluginManager::handleNativeEvent(const QByteArray &eventType,
     }
   }
   return handled;
+}
+
+bool PluginManager::nativeEventFilter(const QByteArray &eventType,
+                                      void *message, qintptr *result) {
+  return handleNativeEvent(eventType, message, result);
 }
 
 bool PluginManager::isActive(const QString &pluginId) const {

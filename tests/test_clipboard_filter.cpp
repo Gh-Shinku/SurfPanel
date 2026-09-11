@@ -1,6 +1,14 @@
+#include "plugin/plugin_manager.h"
 #include "plugins/clipboard_filter/clipboard_filter_plugin.h"
 #include "test_harness.h"
 
+#include <QClipboard>
+#include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QFileInfo>
+#include <QGuiApplication>
+#include <QThread>
+#include <QWindow>
 #include <filesystem>
 #include <fstream>
 #include <utility>
@@ -100,6 +108,30 @@ TEST(ClipboardFilterTest, PdfTransformerMergesInlineBreaks) {
             transformer.transform(QString::fromUtf8("第一行继续\n第二行。")));
 }
 
+TEST(ClipboardFilterTest, PdfTransformerMergesReportedSumatraExcerpt) {
+  PdfTextTransformer transformer;
+  const QString copied =
+      "To quantify the synergy between these two primitives, we formulate the "
+      "Sparsity Allocation\n"
+      "problem: given a fixed total parameter budget, how should capacity be "
+      "distributed between\n"
+      "MoE experts and Engram memory? Our experiments uncover a distinct "
+      "U-shaped scaling\n"
+      "law, revealing that even simple lookup mechanisms, when treated as a "
+      "first-class modeling\n"
+      "primitive, act as essential complements to neural computation.";
+
+  ASSERT_EQ(
+      QString("To quantify the synergy between these two primitives, we "
+              "formulate the Sparsity Allocation problem: given a fixed total "
+              "parameter budget, how should capacity be distributed between "
+              "MoE experts and Engram memory? Our experiments uncover a "
+              "distinct U-shaped scaling law, revealing that even simple "
+              "lookup mechanisms, when treated as a first-class modeling "
+              "primitive, act as essential complements to neural computation."),
+      transformer.transform(copied));
+}
+
 TEST(ClipboardFilterTest, PdfTransformerPreservesParagraphBreaks) {
   PdfTextTransformer transformer;
 
@@ -141,6 +173,34 @@ TEST(ClipboardFilterTest, MatchingTextIsTransformedAndWritten) {
   ASSERT_EQ(ClipboardProcessResult::Written, processor.process(&backend));
   ASSERT_EQ(1, backend.writeCallCount);
   ASSERT_EQ(QString("copied text_normalized"), backend.writtenText);
+}
+
+TEST(ClipboardFilterTest, EventTimeSourceRecoversOwnerlessClipboardWrites) {
+  SuffixTransformer transformer;
+  ClipboardProcessor processor(transformer);
+  processor.setConfiguration(EnabledForSumatra());
+  FakeClipboardBackend backend;
+  backend.readResult = ReadyText({}, "copied text", 42);
+
+  const ClipboardUpdateContext update{"SumatraPDF.exe", 42};
+
+  ASSERT_EQ(ClipboardProcessResult::Written,
+            processor.process(&backend, update));
+  ASSERT_EQ(QString("copied text_normalized"), backend.writtenText);
+}
+
+TEST(ClipboardFilterTest, StaleEventSourceCannotClaimNewClipboardContent) {
+  SuffixTransformer transformer;
+  ClipboardProcessor processor(transformer);
+  processor.setConfiguration(EnabledForSumatra());
+  FakeClipboardBackend backend;
+  backend.readResult = ReadyText({}, "new text", 43);
+
+  const ClipboardUpdateContext staleUpdate{"SumatraPDF.exe", 42};
+
+  ASSERT_EQ(ClipboardProcessResult::Ignored,
+            processor.process(&backend, staleUpdate));
+  ASSERT_EQ(0, backend.writeCallCount);
 }
 
 TEST(ClipboardFilterTest, PdfTextIsNormalizedBeforeClipboardWrite) {
@@ -279,4 +339,48 @@ source_processes = ["SumatraPDF.exe"]
   ASSERT_TRUE(!result.message.contains("deprecated"));
 }
 
-int main() { return RUN_ALL_TESTS(); }
+#ifdef Q_OS_WIN
+TEST(ClipboardFilterTest, NativeListenerTransformsMatchingClipboardUpdates) {
+  PluginConfigFixture fixture;
+  const QString processName =
+      QFileInfo(QCoreApplication::applicationFilePath()).fileName();
+  fixture.write("plugins/clipboard-filter.toml",
+                QString("enabled = true\nsource_processes = [\"%1\"]\n")
+                    .arg(processName)
+                    .toStdString());
+
+  QWindow window;
+  PluginHostContext host;
+  host.eventLoopOwner = &window;
+  host.nativeWindow = window.winId();
+  PluginManager manager;
+  ASSERT_TRUE(
+      manager.registerPlugin(std::make_unique<ClipboardFilterPlugin>()));
+  manager.initialize(host);
+  const PluginReloadReport report = manager.reload(fixture.root);
+  ASSERT_TRUE(!report.hasErrors);
+  ASSERT_TRUE(manager.isActive("clipboard-filter"));
+
+  QClipboard *clipboard = QGuiApplication::clipboard();
+  const QString previousText = clipboard->text();
+  clipboard->setText("A copied line\ncontinues here.");
+
+  const QString expected = "A copied line continues here.";
+  QElapsedTimer timer;
+  timer.start();
+  while (clipboard->text() != expected && timer.elapsed() < 1000) {
+    QCoreApplication::processEvents();
+    QThread::msleep(10);
+  }
+
+  const QString actual = clipboard->text();
+  manager.shutdown();
+  clipboard->setText(previousText);
+  ASSERT_EQ(expected, actual);
+}
+#endif
+
+int main(int argc, char *argv[]) {
+  QGuiApplication application(argc, argv);
+  return RUN_ALL_TESTS();
+}

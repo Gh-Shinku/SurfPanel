@@ -2,6 +2,7 @@
 
 #include "plugin.h"
 
+#include <QAbstractNativeEventFilter>
 #include <QStringList>
 #include <filesystem>
 #include <memory>
@@ -12,7 +13,7 @@ struct PluginReloadReport {
   bool hasErrors = false;
 };
 
-class PluginManager {
+class PluginManager : public QAbstractNativeEventFilter {
 public:
   ~PluginManager();
 
@@ -23,6 +24,8 @@ public:
 
   bool handleNativeEvent(const QByteArray &eventType, void *message,
                          qintptr *result);
+  bool nativeEventFilter(const QByteArray &eventType, void *message,
+                         qintptr *result) override;
   bool isActive(const QString &pluginId) const;
   std::size_t pluginCount() const;
 
@@ -39,4 +42,5 @@ private:
   std::vector<Entry> entries_;
   PluginHostContext hostContext_;
   bool initialized_ = false;
+  bool nativeEventFilterInstalled_ = false;
 };

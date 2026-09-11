@@ -2,7 +2,11 @@ add_executable(test_config test_config.cpp)
 target_link_libraries(test_config PRIVATE SurfPanel::Core)
 
 add_executable(test_clipboard_filter test_clipboard_filter.cpp)
-target_link_libraries(test_clipboard_filter PRIVATE SurfPanel::ClipboardPlugin)
+target_link_libraries(test_clipboard_filter
+  PRIVATE
+  Qt6::Gui
+  SurfPanel::ClipboardPlugin
+)
 
 add_executable(test_plugin_manager test_plugin_manager.cpp)
 target_link_libraries(test_plugin_manager PRIVATE SurfPanel::PluginRuntime)

@@ -210,19 +210,10 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
 bool MainWindow::nativeEvent(const QByteArray &eventType, void *message,
                              qintptr *result) {
   MSG *msg = static_cast<MSG *>(message);
-  const bool pluginHandled =
-      pluginManager_.handleNativeEvent(eventType, message, result);
 
   if (msg != nullptr && msg->message == WM_HOTKEY &&
       static_cast<int>(msg->wParam) == hotkeyId_) {
     toggleVisibilityFromHotkey();
-    if (result != nullptr) {
-      *result = 0;
-    }
-    return true;
-  }
-
-  if (pluginHandled) {
     if (result != nullptr) {
       *result = 0;
     }
