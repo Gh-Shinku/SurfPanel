@@ -46,6 +46,8 @@ not overwrite your configuration. The exact location follows Qt's per-user
 ```
 config/
 	items.toml
+	plugins/
+		<plugin-id>.toml
 	packages/
 		<package-name>/
 			items.toml
@@ -146,11 +148,16 @@ its imports without restarting the app.
 
 ### Optional PDF Clipboard Filter
 
-The Windows clipboard filter is disabled by default. To monitor text copied
-from SumatraPDF, add the following to the main `items.toml` and reload config:
+Plugins are first-class, statically linked application modules. Each plugin has
+its own `config/plugins/<plugin-id>.toml`; one plugin's invalid configuration
+disables only that plugin, without preventing the command palette or other
+plugins from starting.
+
+The Windows clipboard filter (`clipboard-filter`) is disabled by default. To
+monitor text copied from SumatraPDF, edit
+`config/plugins/clipboard-filter.toml` and reload config:
 
 ```toml
-[clipboard_filter]
 enabled = true
 source_processes = ["SumatraPDF.exe"]
 ```
@@ -161,6 +168,19 @@ future PDF normalization rules will plug into the same filter. A transformed
 write replaces the clipboard with Unicode text only. Configure Ditto separately
 to exclude `SumatraPDF.exe` if you want Ditto to capture SurfPanel's processed
 write instead of the original.
+
+For compatibility, an existing `[clipboard_filter]` table in `items.toml` is
+still accepted when the dedicated plugin file does not exist. This legacy form
+emits a deprecation warning; the dedicated file always takes precedence.
+
+### Plugin Architecture
+
+Built-in plugins implement the versioned interface under `src/plugin/`, are
+registered in the built-in registry, and are managed uniformly for
+configuration, startup, shutdown, logging, and native events. Plugin
+implementations live under `src/plugins/<plugin-id>/`. SurfPanel does not load
+third-party DLLs, so the plugin boundary stays type-safe and avoids a public
+binary ABI while the extension model evolves.
 
 ### Realtime Variables
 

@@ -34,30 +34,76 @@ find_package(Qt6 COMPONENTS Core Widgets REQUIRED)
 
 add_subdirectory(third-party/toml11)
 
-add_executable(SurfPanel WIN32)
-
-target_sources(SurfPanel
-  PRIVATE
+add_library(surfpanel_core STATIC
   src/action_manager.cpp
-  src/app_paths.cpp
-  src/atomic_file.cpp
-  src/plugin/builtin_plugins.cpp
-  src/plugin/plugin_manager.cpp
-  src/plugins/clipboard_filter/clipboard_filter_plugin.cpp
-  src/variable_resolver.cpp
-  src/main.cpp
-  src/mainwindow.cpp
-  src/resources.qrc
-  src/config.cpp
-  src/fluent_panel.cpp
-  src/recent_items_store.cpp
-  src/search_result_view.cpp
-  src/search_engine.cpp
+  src/action_manager.h
   src/app_logging.cpp
+  src/app_logging.h
+  src/app_paths.cpp
+  src/app_paths.h
+  src/atomic_file.cpp
+  src/atomic_file.h
+  src/config.cpp
+  src/config.h
+  src/item.h
+  src/recent_items_store.cpp
+  src/recent_items_store.h
+  src/search_engine.cpp
+  src/search_engine.h
+  src/variable_resolver.cpp
+  src/variable_resolver.h
 )
+target_include_directories(surfpanel_core PUBLIC src)
+target_link_libraries(surfpanel_core PUBLIC Qt6::Gui toml11::toml11)
+add_library(SurfPanel::Core ALIAS surfpanel_core)
 
-target_include_directories(SurfPanel PRIVATE src)
-target_link_libraries(SurfPanel PRIVATE Qt6::Widgets toml11::toml11)
+add_library(surfpanel_plugin_runtime STATIC
+  src/plugin/plugin.h
+  src/plugin/plugin_manager.cpp
+  src/plugin/plugin_manager.h
+)
+target_include_directories(surfpanel_plugin_runtime PUBLIC src)
+target_link_libraries(surfpanel_plugin_runtime PUBLIC Qt6::Core)
+add_library(SurfPanel::PluginRuntime ALIAS surfpanel_plugin_runtime)
+
+add_library(surfpanel_clipboard_plugin STATIC
+  src/plugins/clipboard_filter/clipboard_filter_plugin.cpp
+  src/plugins/clipboard_filter/clipboard_filter_plugin.h
+)
+target_include_directories(surfpanel_clipboard_plugin PUBLIC src)
+target_link_libraries(surfpanel_clipboard_plugin
+  PRIVATE
+  toml11::toml11
+  PUBLIC
+  SurfPanel::PluginRuntime
+)
+add_library(SurfPanel::ClipboardPlugin ALIAS surfpanel_clipboard_plugin)
+
+add_library(surfpanel_ui STATIC
+  src/fluent_panel.cpp
+  src/fluent_panel.h
+  src/mainwindow.cpp
+  src/mainwindow.h
+  src/plugin/builtin_plugins.cpp
+  src/plugin/builtin_plugins.h
+  src/search_result_view.cpp
+  src/search_result_view.h
+)
+target_include_directories(surfpanel_ui PUBLIC src)
+target_link_libraries(surfpanel_ui
+  PUBLIC
+  Qt6::Widgets
+  SurfPanel::Core
+  SurfPanel::PluginRuntime
+  SurfPanel::ClipboardPlugin
+)
+add_library(SurfPanel::Ui ALIAS surfpanel_ui)
+
+add_executable(SurfPanel WIN32
+  src/main.cpp
+  src/resources.qrc
+)
+target_link_libraries(SurfPanel PRIVATE SurfPanel::Ui)
 if(MINGW)
   target_link_options(SurfPanel PRIVATE $<$<CONFIG:Release>:-s>)
 endif()

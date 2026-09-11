@@ -38,6 +38,8 @@ SurfPanel 使用单个主 TOML 文件进行日常配置。可选的导入功能�
 ```
 config/
 	items.toml
+	plugins/
+		<plugin-id>.toml
 	packages/
 		<package-name>/
 			items.toml
@@ -130,11 +132,14 @@ snippet = "{{date}}"
 
 ### 可选 PDF 剪贴板过滤器
 
-Windows 剪贴板过滤器默认关闭。若要监听从 SumatraPDF 复制的文本，请在主
-`items.toml` 中加入以下内容并重新加载配置：
+插件是静态链接到应用中的一等模块。每个插件使用独立的
+`config/plugins/<plugin-id>.toml`；某个插件配置无效时只会禁用该插件，
+不会阻止命令面板或其他插件启动。
+
+Windows 剪贴板过滤器（`clipboard-filter`）默认关闭。若要监听从 SumatraPDF
+复制的文本，请编辑 `config/plugins/clipboard-filter.toml` 并重新加载配置：
 
 ```toml
-[clipboard_filter]
 enabled = true
 source_processes = ["SumatraPDF.exe"]
 ```
@@ -143,6 +148,16 @@ source_processes = ["SumatraPDF.exe"]
 暂不会改动文本；后续 PDF 规范化规则会接入同一过滤器。转换后的写入仅保留
 Unicode 文本。若希望 Ditto 捕获 SurfPanel 处理后的写入，请在 Ditto 中单独排除
 `SumatraPDF.exe`，避免捕获原始内容。
+
+为兼容旧配置，当独立插件配置文件不存在时，仍会读取 `items.toml` 中的
+`[clipboard_filter]`。该旧格式会产生弃用警告；独立插件配置文件始终优先。
+
+### 插件架构
+
+内置插件实现 `src/plugin/` 下带版本号的统一接口，通过内置注册表加入运行时，
+并由插件管理器统一处理配置、启动、停止、日志和原生事件。具体插件位于
+`src/plugins/<plugin-id>/`。SurfPanel 当前不动态加载第三方 DLL，因此扩展模型
+演进期间无需维护公开二进制 ABI，同时保留类型安全的边界。
 
 ### 实时变量
 

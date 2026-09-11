@@ -21,6 +21,20 @@
 - Add or update focused tests under `tests/` for behavior changes. Do not commit
   generated `build/`, `Output/`, cache, or local configuration artifacts.
 
+## Plugin conventions
+
+- Treat built-in plugins as first-class modules under `src/plugins/<plugin-id>/`.
+  IDs must be stable lowercase ASCII names containing only letters, digits, and
+  hyphens.
+- Implement `IPlugin`, register through `src/plugin/builtin_plugins.cpp`, and
+  keep plugin-specific configuration in `config/plugins/<plugin-id>.toml`.
+- Keep plugin lifecycle methods idempotent. A plugin must release native
+  resources and invalidate pending asynchronous work in `stop()`.
+- Use `PluginHostContext` for host services and native-event delivery. Do not
+  couple plugin implementations directly to `MainWindow`.
+- Invalid plugin configuration must disable only that plugin. Cover parsing,
+  lifecycle, and isolation behavior with focused tests.
+
 ## Commits
 
 - Follow the existing format: `[type] concise imperative summary`.
