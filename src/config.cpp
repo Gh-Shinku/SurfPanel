@@ -45,6 +45,14 @@ std::string NormalizeKeyPart(const QString &value) {
   return value.toLower().toStdString();
 }
 
+fs::path PathFromTomlString(const std::string &value) {
+#ifdef _WIN32
+  return fs::path(QString::fromUtf8(value.c_str()).toStdWString());
+#else
+  return fs::u8path(value);
+#endif
+}
+
 std::string BuildItemKey(const std::string &id, const QString &type,
                          const QString &name) {
   if (!id.empty()) {
@@ -344,7 +352,7 @@ MainConfig ReadMainConfig(const fs::path &mainPath,
       warnings->push_back("Ignoring config import: value must be a string");
       continue;
     }
-    config.imports.push_back(fs::path(importEntry.as_string()));
+    config.imports.push_back(PathFromTomlString(importEntry.as_string()));
   }
 
   ReadSearchPrefixes(root, &config.searchPrefixes, warnings);

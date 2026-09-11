@@ -295,6 +295,30 @@ url = "https://example.com/first"
   fs::remove_all(root);
 }
 
+TEST(ConfigTest, ImportsUnicodePaths) {
+  const fs::path root =
+      fs::temp_directory_path() / "surfpanel_unicode_import_root_配置";
+  fs::remove_all(root);
+
+  WriteTomlFile(root / "packages", "项目.toml",
+                R"([[items]]
+name = "Unicode"
+type = "url"
+[items.payload]
+url = "https://example.com/unicode"
+)");
+  WriteTomlFile(root, "items.toml",
+                R"(imports = ["packages/项目.toml"]
+)");
+
+  const auto result = LoadConfigFromRoot(root);
+  ASSERT_TRUE(result.ok);
+  ASSERT_EQ(std::size_t(1), result.items.size());
+  ASSERT_EQ(QString("Unicode"), result.items[0].name);
+
+  fs::remove_all(root);
+}
+
 TEST(ConfigTest, ParsesMainConfigSearchPrefixes) {
   const fs::path root =
       fs::temp_directory_path() / "surfpanel_prefix_main_root";

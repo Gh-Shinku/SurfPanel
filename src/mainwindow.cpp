@@ -874,8 +874,13 @@ void MainWindow::openConfigDirectory() {
   }
 
   const fs::path absolutePath = fs::absolute(*configDir);
+#ifdef Q_OS_WIN
+  QString dirPath =
+      QDir::cleanPath(QString::fromStdWString(absolutePath.wstring()));
+#else
   QString dirPath =
       QDir::cleanPath(QString::fromStdString(absolutePath.string()));
+#endif
   dirPath = QDir::toNativeSeparators(dirPath);
 
 #ifdef Q_OS_WIN
