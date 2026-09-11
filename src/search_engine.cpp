@@ -26,7 +26,18 @@ QString TrimLeft(QString query) {
 } // namespace
 
 void SearchEngine::setItems(const std::vector<StringItem> &items) {
-  items_ = items;
+  items_.clear();
+  items_.reserve(items.size());
+  for (const auto &item : items) {
+    IndexedItem indexed;
+    indexed.item = item;
+    indexed.normalizedName = item.name.toLower();
+    indexed.normalizedKeywords.reserve(item.keywords.size());
+    for (const auto &keyword : item.keywords) {
+      indexed.normalizedKeywords.push_back(keyword.toLower());
+    }
+    items_.push_back(std::move(indexed));
+  }
 }
 
 void SearchEngine::setSearchPrefixes(
@@ -63,16 +74,17 @@ std::vector<const StringItem *> SearchEngine::search(QString query,
   }
 
   std::vector<SearchMatch> matches;
-  for (const auto &item : items_) {
+  for (const auto &indexed : items_) {
+    const StringItem &item = indexed.item;
     if (parsed.prefixMode &&
         item.type.compare(parsed.itemType, Qt::CaseInsensitive) != 0) {
       continue;
     }
 
     const int score =
-        parsed.query.isEmpty() ? 1 : calculateScore(item, parsed.query);
+        parsed.query.isEmpty() ? 1 : calculateScore(indexed, parsed.query);
     if (score > 0) {
-      matches.push_back({&item, score});
+      matches.push_back({&indexed.item, score});
     }
   }
 
@@ -94,23 +106,21 @@ std::vector<const StringItem *> SearchEngine::search(QString query,
   return results;
 }
 
-int SearchEngine::calculateScore(const StringItem &item,
+int SearchEngine::calculateScore(const IndexedItem &item,
                                  const QString &fullQuery) const {
   int score = 0;
-  const QString nameLower = item.name.toLower();
 
-  if (nameLower == fullQuery) {
+  if (item.normalizedName == fullQuery) {
     score += 100;
   }
-  if (nameLower.contains(fullQuery)) {
+  if (item.normalizedName.contains(fullQuery)) {
     score += 50;
   }
 
-  for (const auto &kw : item.keywords) {
-    const QString kwLower = kw.toLower();
-    if (kwLower == fullQuery) {
+  for (const auto &keyword : item.normalizedKeywords) {
+    if (keyword == fullQuery) {
       score += 40;
-    } else if (kwLower.contains(fullQuery)) {
+    } else if (keyword.contains(fullQuery)) {
       score += 20;
     }
   }

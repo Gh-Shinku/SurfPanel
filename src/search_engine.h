@@ -21,9 +21,15 @@ public:
                                          std::size_t k = 5) const;
 
 private:
-  int calculateScore(const StringItem &item, const QString &fullQuery) const;
+  struct IndexedItem {
+    StringItem item;
+    QString normalizedName;
+    std::vector<QString> normalizedKeywords;
+  };
 
-  std::vector<StringItem> items_;
+  int calculateScore(const IndexedItem &item, const QString &fullQuery) const;
+
+  std::vector<IndexedItem> items_;
   std::vector<SearchPrefixRule> prefixes_;
 };
 
