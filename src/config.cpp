@@ -226,11 +226,43 @@ std::vector<fs::path> ListTomlFiles(const fs::path &dir) {
   return files;
 }
 
+bool IsPathWithin(const fs::path &path, const fs::path &root) {
+  std::error_code ec;
+  const fs::path relative = fs::relative(path, root, ec);
+  if (ec) {
+    return false;
+  }
+
+  for (const auto &part : relative) {
+    if (part == "..") {
+      return false;
+    }
+  }
+  return true;
+}
+
 std::vector<fs::path> ExpandSourcePath(const fs::path &root,
                                        const fs::path &source,
                                        std::vector<std::string> *warnings) {
-  const fs::path resolved = source.is_absolute() ? source : (root / source);
+  if (source.is_absolute()) {
+    warnings->push_back("Ignoring absolute config import: " + source.string());
+    return {};
+  }
+
   std::error_code ec;
+  const fs::path canonicalRoot = fs::weakly_canonical(root, ec);
+  if (ec) {
+    warnings->push_back("Unable to resolve config root: " + root.string());
+    return {};
+  }
+
+  const fs::path resolved = fs::weakly_canonical(canonicalRoot / source, ec);
+  if (ec || !IsPathWithin(resolved, canonicalRoot)) {
+    warnings->push_back("Ignoring config import outside root: " +
+                        source.string());
+    return {};
+  }
+
   if (!fs::exists(resolved, ec)) {
     warnings->push_back("Missing config source: " + resolved.string());
     return {};
@@ -492,7 +524,7 @@ ConfigLoadResult LoadConfigFromRoot(const fs::path &configRoot) {
   try {
     const MainConfig mainConfig = ReadMainConfig(mainPath, &warnings);
     sourceEntries = mainConfig.imports;
-    sourceEntries.push_back(mainPath);
+    sourceEntries.emplace_back("items.toml");
     result.searchPrefixes = mainConfig.searchPrefixes;
   } catch (const toml::syntax_error &err) {
     result.ok = false;

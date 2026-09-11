@@ -420,6 +420,41 @@ url = "https://example.com/local"
   fs::remove_all(root);
 }
 
+TEST(ConfigTest, ImportsOutsideConfigRootAreIgnored) {
+  const fs::path root =
+      fs::temp_directory_path() / "surfpanel_import_safe_root";
+  const fs::path outside =
+      fs::temp_directory_path() / "surfpanel_import_outside.toml";
+  fs::remove_all(root);
+  fs::remove(outside);
+
+  WriteTomlFile(fs::temp_directory_path(), outside.filename().string(),
+                R"([[items]]
+name = "Outside"
+type = "url"
+[items.payload]
+url = "https://example.com/outside"
+)");
+  WriteTomlFile(root, "items.toml",
+                R"(imports = ["../surfpanel_import_outside.toml"]
+
+[[items]]
+name = "Local"
+type = "url"
+[items.payload]
+url = "https://example.com/local"
+)");
+
+  const auto result = LoadConfigFromRoot(root);
+  ASSERT_TRUE(result.ok);
+  ASSERT_CONTAINS(result.message, "Ignoring config import outside root");
+  ASSERT_EQ(std::size_t(1), result.items.size());
+  ASSERT_EQ(QString("Local"), result.items[0].name);
+
+  fs::remove_all(root);
+  fs::remove(outside);
+}
+
 TEST(ConfigTest, FallbackUsesLastGoodOnFailure) {
   const fs::path root = fs::temp_directory_path() / "surfpanel_fallback_root";
   fs::remove_all(root);

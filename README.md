@@ -68,8 +68,8 @@ imports = [
 ]
 ```
 
-Import paths are relative to `config/`. Directories load all `.toml` files in
-filename order. Imported items load first, then local `[[items]]` in
+Import paths must be relative to, and remain within, `config/`. Directories load
+all `.toml` files in filename order. Imported items load first, then local `[[items]]` in
 `config/items.toml` load after them, so local items can override or disable
 package items.
 
