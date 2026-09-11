@@ -14,6 +14,13 @@ add_executable(test_clipboard_filter
 target_include_directories(test_clipboard_filter PRIVATE ../src)
 target_link_libraries(test_clipboard_filter PRIVATE Qt6::Core)
 
+add_executable(test_plugin_manager
+	test_plugin_manager.cpp
+	../src/plugin/plugin_manager.cpp
+)
+target_include_directories(test_plugin_manager PRIVATE ../src)
+target_link_libraries(test_plugin_manager PRIVATE Qt6::Core)
+
 add_executable(test_search_engine
 	test_search_engine.cpp
 	../src/search_engine.cpp
@@ -64,6 +71,7 @@ target_link_libraries(test_mainwindow PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets to
 
 add_test(NAME test_config COMMAND test_config)
 add_test(NAME test_clipboard_filter COMMAND test_clipboard_filter)
+add_test(NAME test_plugin_manager COMMAND test_plugin_manager)
 add_test(NAME test_search_engine COMMAND test_search_engine)
 add_test(NAME test_action_manager COMMAND test_action_manager)
 add_test(NAME test_variable_resolver COMMAND test_variable_resolver)
@@ -78,6 +86,7 @@ if(WIN32)
   set_tests_properties(
     test_config
     test_clipboard_filter
+    test_plugin_manager
     test_search_engine
     test_action_manager
     test_variable_resolver
