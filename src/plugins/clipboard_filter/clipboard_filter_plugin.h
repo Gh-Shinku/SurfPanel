@@ -1,6 +1,7 @@
 #pragma once
 
 #include "plugin/plugin.h"
+#include "text_transformer.h"
 
 #include <QObject>
 #include <memory>
@@ -38,17 +39,6 @@ public:
 
 private:
   std::vector<QString> sourceProcesses_;
-};
-
-class TextTransformer {
-public:
-  virtual ~TextTransformer() = default;
-  virtual QString transform(const QString &text) const = 0;
-};
-
-class IdentityTextTransformer final : public TextTransformer {
-public:
-  QString transform(const QString &text) const override;
 };
 
 class ClipboardBackend {
@@ -98,7 +88,7 @@ private:
   void log(QtMsgType type, const QString &message) const;
 
   ClipboardFilterConfig config_;
-  IdentityTextTransformer transformer_;
+  PdfTextTransformer transformer_;
   ClipboardProcessor processor_;
   std::unique_ptr<ClipboardBackend> backend_;
   PluginHostContext hostContext_;

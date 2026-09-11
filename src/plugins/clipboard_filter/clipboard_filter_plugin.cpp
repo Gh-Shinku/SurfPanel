@@ -242,10 +242,6 @@ bool SourceMatcher::matches(const QString &processName) const {
 
 bool SourceMatcher::empty() const { return sourceProcesses_.empty(); }
 
-QString IdentityTextTransformer::transform(const QString &text) const {
-  return text;
-}
-
 ClipboardProcessor::ClipboardProcessor(const TextTransformer &transformer)
     : transformer_(transformer) {}
 

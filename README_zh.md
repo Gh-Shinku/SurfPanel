@@ -144,10 +144,11 @@ enabled = true
 source_processes = ["SumatraPDF.exe"]
 ```
 
-仅处理由配置来源进程拥有的 Unicode 文本。当前转换器是 identity 占位实现，
-暂不会改动文本；后续 PDF 规范化规则会接入同一过滤器。转换后的写入仅保留
-Unicode 文本。若希望 Ditto 捕获 SurfPanel 处理后的写入，请在 Ditto 中单独排除
-`SumatraPDF.exe`，避免捕获原始内容。
+仅处理由配置来源进程拥有的 Unicode 文本。PDF 转换器会合并段落内的单换行、
+保留空行表示的段落边界、在下一行以小写字母开头时移除英文行尾断词连字符，
+并清理中日韩文字与拉丁字母或数字之间的异常空格。转换后的写入仅保留
+Unicode 文本。若希望 Ditto 捕获 SurfPanel 处理后的写入，请在 Ditto 中单独
+排除 `SumatraPDF.exe`，避免捕获原始内容。
 
 为兼容旧配置，当独立插件配置文件不存在时，仍会读取 `items.toml` 中的
 `[clipboard_filter]`。该旧格式会产生弃用警告；独立插件配置文件始终优先。

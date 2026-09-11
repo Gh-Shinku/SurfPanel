@@ -163,11 +163,12 @@ source_processes = ["SumatraPDF.exe"]
 ```
 
 Only Unicode text owned by a configured source process is considered. The
-current transformer is an identity placeholder, so it does not alter text yet;
-future PDF normalization rules will plug into the same filter. A transformed
-write replaces the clipboard with Unicode text only. Configure Ditto separately
-to exclude `SumatraPDF.exe` if you want Ditto to capture SurfPanel's processed
-write instead of the original.
+PDF transformer joins single line breaks while preserving blank-line paragraph
+boundaries, removes English end-of-line hyphenation when the next line starts
+with a lowercase letter, and removes unwanted spacing between CJK and Latin
+text or numbers. A transformed write replaces the clipboard with Unicode text
+only. Configure Ditto separately to exclude `SumatraPDF.exe` if you want Ditto
+to capture SurfPanel's processed write instead of the original.
 
 For compatibility, an existing `[clipboard_filter]` table in `items.toml` is
 still accepted when the dedicated plugin file does not exist. This legacy form

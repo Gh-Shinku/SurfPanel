@@ -69,6 +69,8 @@ add_library(SurfPanel::PluginRuntime ALIAS surfpanel_plugin_runtime)
 add_library(surfpanel_clipboard_plugin STATIC
   src/plugins/clipboard_filter/clipboard_filter_plugin.cpp
   src/plugins/clipboard_filter/clipboard_filter_plugin.h
+  src/plugins/clipboard_filter/text_transformer.cpp
+  src/plugins/clipboard_filter/text_transformer.h
 )
 target_include_directories(surfpanel_clipboard_plugin PUBLIC src)
 target_link_libraries(surfpanel_clipboard_plugin

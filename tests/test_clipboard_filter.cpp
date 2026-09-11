@@ -90,6 +90,47 @@ TEST(ClipboardFilterTest, SourceMatcherIsCaseInsensitive) {
   ASSERT_TRUE(!matcher.matches("notepad.exe"));
 }
 
+TEST(ClipboardFilterTest, PdfTransformerMergesInlineBreaks) {
+  PdfTextTransformer transformer;
+
+  ASSERT_EQ(QString("The first line continues here. Next sentence."),
+            transformer.transform(
+                "The first line\r\ncontinues here.\nNext sentence."));
+  ASSERT_EQ(QString::fromUtf8("第一行继续第二行。"),
+            transformer.transform(QString::fromUtf8("第一行继续\n第二行。")));
+}
+
+TEST(ClipboardFilterTest, PdfTransformerPreservesParagraphBreaks) {
+  PdfTextTransformer transformer;
+
+  ASSERT_EQ(QString::fromUtf8("First paragraph continues.\n\n第二段继续。"),
+            transformer.transform(QString::fromUtf8(
+                "First paragraph\r\ncontinues.\r\n\r\n第二段\r\n继续。")));
+}
+
+TEST(ClipboardFilterTest, PdfTransformerRepairsEnglishHyphenation) {
+  PdfTextTransformer transformer;
+
+  ASSERT_EQ(QString("A multiline example."),
+            transformer.transform("A multi-\nline exam-\nple."));
+  ASSERT_EQ(QString("ISO-Standard"), transformer.transform("ISO-\nStandard"));
+}
+
+TEST(ClipboardFilterTest, PdfTransformerRemovesCjkLatinSpacing) {
+  PdfTextTransformer transformer;
+
+  ASSERT_EQ(QString::fromUtf8("在Qt 6中使用SumatraPDF阅读PDF文档。"),
+            transformer.transform(QString::fromUtf8(
+                "在 Qt 6 中使用 SumatraPDF\n阅读 PDF 文档。")));
+}
+
+TEST(ClipboardFilterTest, PdfTransformerKeepsPunctuationAttached) {
+  PdfTextTransformer transformer;
+
+  ASSERT_EQ(QString("A wrapped sentence, with punctuation."),
+            transformer.transform("A wrapped sentence\n, with punctuation."));
+}
+
 TEST(ClipboardFilterTest, MatchingTextIsTransformedAndWritten) {
   SuffixTransformer transformer;
   ClipboardProcessor processor(transformer);
@@ -100,6 +141,18 @@ TEST(ClipboardFilterTest, MatchingTextIsTransformedAndWritten) {
   ASSERT_EQ(ClipboardProcessResult::Written, processor.process(&backend));
   ASSERT_EQ(1, backend.writeCallCount);
   ASSERT_EQ(QString("copied text_normalized"), backend.writtenText);
+}
+
+TEST(ClipboardFilterTest, PdfTextIsNormalizedBeforeClipboardWrite) {
+  PdfTextTransformer transformer;
+  ClipboardProcessor processor(transformer);
+  processor.setConfiguration(EnabledForSumatra());
+  FakeClipboardBackend backend;
+  backend.readResult =
+      ReadyText("SumatraPDF.exe", QString::fromUtf8("使用 PDF\n阅读文档"));
+
+  ASSERT_EQ(ClipboardProcessResult::Written, processor.process(&backend));
+  ASSERT_EQ(QString::fromUtf8("使用PDF阅读文档"), backend.writtenText);
 }
 
 TEST(ClipboardFilterTest, UnmatchedOwnerAndNonTextAreIgnored) {
