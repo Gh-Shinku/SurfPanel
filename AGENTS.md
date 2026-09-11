@@ -7,8 +7,8 @@
   explicitly updating it.
 - Configure with `make cg-debug` or `make cg-release`. Pass local CMake options
   without committing them, e.g. `make cg-debug CMAKE_ARGS='-DCMAKE_PREFIX_PATH=/path/to/Qt6'`.
-- Build with `make build`; run tests with `make test`. Ensure Qt and compiler
-  runtime DLL directories are on `PATH` when running tests on Windows.
+- Build with `make build`; run tests with `make test`. CTest configures Qt and
+  compiler runtime paths automatically on Windows.
 
 ## Code conventions
 
