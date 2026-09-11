@@ -28,6 +28,17 @@ To persist it for future terminals on Windows:
 [Environment]::SetEnvironmentVariable("SURFPANEL_QT_ROOT", "C:\Qt\6.8.0\mingw_64", "User")
 ```
 
+To build the Windows installer, also set `SURFPANEL_MINGW_ROOT` to the MinGW
+prefix containing `bin/libstdc++-6.dll`. `pack.bat` uses the standard Inno
+Setup 6 location by default; set `SURFPANEL_ISCC` to the full path of
+`ISCC.exe` when it is installed elsewhere.
+
+The installer performs in-place upgrades using the stable Inno Setup `AppId`.
+If SurfPanel is running, Windows Restart Manager lists it on the Preparing to
+Install page and offers to close it automatically before files are replaced.
+After an upgrade, Restart Manager starts the updated daemon again; on a fresh
+install, the Finish page offers to launch it.
+
 ## Configuration
 
 SurfPanel uses a single main TOML file for everyday configuration. Optional

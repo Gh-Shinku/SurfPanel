@@ -10,6 +10,9 @@
   missing or invalid. Configure with `make cg-debug` or `make cg-release`.
 - Build with `make build`; run tests with `make test`. CTest configures Qt and
   compiler runtime paths automatically on Windows.
+- Packaging requires `SURFPANEL_MINGW_ROOT`; set `SURFPANEL_ISCC` only when
+  Inno Setup 6 is not installed in its standard location. Run `make pack` after
+  a release build.
 
 ## Code conventions
 

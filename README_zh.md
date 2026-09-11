@@ -22,6 +22,16 @@ $env:SURFPANEL_QT_ROOT = "C:\Qt\6.8.0\mingw_64"
 [Environment]::SetEnvironmentVariable("SURFPANEL_QT_ROOT", "C:\Qt\6.8.0\mingw_64", "User")
 ```
 
+构建 Windows 安装包时，还需将 `SURFPANEL_MINGW_ROOT` 设置为包含
+`bin/libstdc++-6.dll` 的 MinGW 安装前缀。`pack.bat` 默认使用 Inno Setup 6
+的标准安装位置；若安装在其他位置，将 `SURFPANEL_ISCC` 设置为 `ISCC.exe`
+的完整路径。
+
+安装程序通过稳定的 Inno Setup `AppId` 执行原地升级。若 SurfPanel 正在运行，
+Windows Restart Manager 会在“准备安装”页面列出它，并允许在替换文件前自动
+关闭；升级完成后会由 Restart Manager 重新启动守护程序。全新安装则会在完成
+页面提供启动选项。
+
 ## 配置
 
 SurfPanel 使用单个主 TOML 文件进行日常配置。可选的导入功能可以在需要共享或复用项目组时拉取包文件。

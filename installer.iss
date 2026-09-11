@@ -8,7 +8,10 @@
 #define MyAppId "{{4D2F8EC0-8A04-43EF-B8C8-D8F847A16D96}}"
 #define MyAppUninstallKey "Software\Microsoft\Windows\CurrentVersion\Uninstall\{4D2F8EC0-8A04-43EF-B8C8-D8F847A16D96}_is1"
 #define MyProjectRoot SourcePath
-#define MyMingwRoot "C:\Users\shinku\AppData\Local\msys2\mingw64"
+#define MyMingwRoot GetEnv("SURFPANEL_MINGW_ROOT")
+#if MyMingwRoot == ""
+  #error "SURFPANEL_MINGW_ROOT is required and must point to the MinGW installation prefix"
+#endif
 #define MyMingwBin AddBackslash(MyMingwRoot) + "bin"
 #define MyBuildDir AddBackslash(MyProjectRoot) + "build"
 #define MyConfigDir AddBackslash(MyProjectRoot) + "config"
@@ -41,6 +44,11 @@ VersionInfoVersion={#MyAppVersion}
 VersionInfoDescription={#MyAppName}
 VersionInfoCompany={#MyAppPublisher}
 WizardStyle=modern
+CloseApplications=yes
+CloseApplicationsFilter={#MyAppExeName}
+RestartApplications=yes
+UsePreviousAppDir=yes
+UsePreviousTasks=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -51,6 +59,9 @@ Name: "autostart"; Description: "Start SurfPanel with Windows"; Flags: unchecked
 
 [Dirs]
 Name: "{app}\config"
+
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\config"; Check: ShouldResetExistingConfig
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#MyAppName}"; ValueData: "{app}\{#MyAppExeName}"; Flags: uninsdeletevalue; Tasks: autostart
@@ -100,7 +111,7 @@ Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\{#MyAppExeName}"
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent; Check: IsFreshInstall
 
 [Code]
 var
@@ -108,6 +119,7 @@ var
   PreviousUninstallerPath: string;
   ConfigBackupDir: string;
   KeepExistingConfig: Boolean;
+  UpgradeInstall: Boolean;
 
 function QueryExistingInstallValue(ValueName: string; var Value: string): Boolean;
 begin
@@ -168,7 +180,7 @@ begin
             if not CopyDirectoryRecursive(SourcePath, DestPath) then
               Result := False;
           end else begin
-            if not FileCopy(SourcePath, DestPath, False) then
+            if not CopyFile(SourcePath, DestPath, False) then
               Result := False;
           end;
         end;
@@ -176,37 +188,6 @@ begin
     finally
       FindClose(FindRec);
     end;
-  end;
-end;
-
-function UninstallExistingVersion(): Boolean;
-var
-  ResultCode: Integer;
-begin
-  Result := True;
-
-  if PreviousUninstallerPath = '' then
-    exit;
-
-  if not FileExists(PreviousUninstallerPath) then begin
-    MsgBox('Existing {#MyAppName} uninstaller was not found:' + #13#10 +
-      PreviousUninstallerPath, mbError, MB_OK);
-    Result := False;
-    exit;
-  end;
-
-  Result := Exec(
-    PreviousUninstallerPath,
-    '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS',
-    '',
-    SW_HIDE,
-    ewWaitUntilTerminated,
-    ResultCode);
-
-  if (not Result) or (ResultCode <> 0) then begin
-    MsgBox('Failed to uninstall the existing {#MyAppName} installation.' + #13#10 +
-      'Exit code: ' + IntToStr(ResultCode), mbError, MB_OK);
-    Result := False;
   end;
 end;
 
@@ -243,8 +224,9 @@ begin
   PreviousInstallDir := '';
   PreviousUninstallerPath := '';
   ConfigBackupDir := ExpandConstant('{tmp}\{#MyAppName}_config_backup');
+  UpgradeInstall := FindExistingInstallation();
 
-  if not FindExistingInstallation() then
+  if not UpgradeInstall then
     exit;
 
   if PreviousInstallDir <> '' then
@@ -255,34 +237,39 @@ begin
   KeepExistingConfig := False;
   if (PreviousConfigDir <> '') and DirExists(PreviousConfigDir) then begin
     KeepExistingConfig :=
-      MsgBox('A previous {#MyAppName} installation was found.' + #13#10#13#10 +
+      SuppressibleMsgBox('A previous {#MyAppName} installation was found.' + #13#10#13#10 +
         'Do you want to keep the existing config directory?',
-        mbConfirmation, MB_YESNO) = IDYES;
+        mbConfirmation, MB_YESNO, IDYES) = IDYES;
 
     if KeepExistingConfig then begin
       DelTree(ConfigBackupDir, True, True, True);
       if not CopyDirectoryRecursive(PreviousConfigDir, ConfigBackupDir) then begin
-        MsgBox('Failed to back up the existing config directory.', mbError, MB_OK);
+        SuppressibleMsgBox('Failed to back up the existing config directory.',
+          mbError, MB_OK, IDOK);
         Result := False;
         exit;
       end;
     end;
   end;
 
-  if not UninstallExistingVersion() then begin
-    Result := False;
-    exit;
-  end;
+end;
 
-  if (not KeepExistingConfig) and (PreviousConfigDir <> '') and DirExists(PreviousConfigDir) then
-    DelTree(PreviousConfigDir, True, True, True);
+function IsFreshInstall(): Boolean;
+begin
+  Result := not UpgradeInstall;
+end;
+
+function ShouldResetExistingConfig(): Boolean;
+begin
+  Result := (PreviousInstallDir <> '') and (not KeepExistingConfig);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if (CurStep = ssPostInstall) and KeepExistingConfig and DirExists(ConfigBackupDir) then begin
     if not CopyDirectoryRecursive(ConfigBackupDir, ExpandConstant('{app}\config')) then
-      MsgBox('Failed to restore the existing config directory.', mbError, MB_OK);
+      SuppressibleMsgBox('Failed to restore the existing config directory.',
+        mbError, MB_OK, IDOK);
 
     DelTree(ConfigBackupDir, True, True, True);
   end;

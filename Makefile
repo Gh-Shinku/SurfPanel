@@ -1,11 +1,16 @@
-.PHONY: check-env cg-debug cg-release build test pack clean
+.PHONY: check-env check-pack-env cg-debug cg-release build test pack clean
 
 CMAKE ?= cmake
 BUILD_DIR ?= build
 export SURFPANEL_QT_ROOT
+export SURFPANEL_MINGW_ROOT
+export SURFPANEL_ISCC
 
 check-env:
 	@if not defined SURFPANEL_QT_ROOT (echo error: SURFPANEL_QT_ROOT must point to the Qt6 installation prefix. & exit /b 1)
+
+check-pack-env:
+	@if not defined SURFPANEL_MINGW_ROOT (echo error: SURFPANEL_MINGW_ROOT must point to the MinGW installation prefix. & exit /b 1)
 
 cg-debug: check-env
 	@$(CMAKE) -G Ninja -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
@@ -19,7 +24,7 @@ build: check-env
 test:
 	@ctest --test-dir $(BUILD_DIR) --output-on-failure
 
-pack:
+pack: check-pack-env
 	cmd //c pack.bat
 
 clean:
