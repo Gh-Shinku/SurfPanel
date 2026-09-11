@@ -42,7 +42,7 @@ SearchQueryInfo SearchEngine::parseQuery(QString query) const {
   if (const auto spaceIndex = FindFirstSpace(query); spaceIndex.has_value()) {
     const QString prefix = query.left(*spaceIndex);
     for (const auto &rule : prefixes_) {
-      if (rule.prefix == prefix) {
+      if (rule.prefix.compare(prefix, Qt::CaseInsensitive) == 0) {
         parsed.prefixMode = true;
         parsed.itemType = rule.itemType.toLower();
         parsed.query = query.mid(*spaceIndex + 1).trimmed();

@@ -57,7 +57,7 @@ bool HasPrefixConflict(const std::vector<SearchPrefixRule> &rules,
                        const QString &type, const QString &prefix) {
   for (const auto &rule : rules) {
     if (rule.itemType.compare(type, Qt::CaseInsensitive) != 0 &&
-        rule.prefix == prefix) {
+        rule.prefix.compare(prefix, Qt::CaseInsensitive) == 0) {
       return true;
     }
   }
@@ -276,6 +276,13 @@ void ReadSearchPrefixes(const toml::value &root,
     const QString prefix = QString::fromStdString(entry.second.as_string());
     if (prefix.isEmpty()) {
       warnings->push_back("Ignoring empty search prefix for " + entry.first);
+      continue;
+    }
+    if (prefix.trimmed() != prefix ||
+        std::any_of(prefix.cbegin(), prefix.cend(),
+                    [](QChar c) { return c.isSpace(); })) {
+      warnings->push_back("Ignoring search prefix for " + entry.first +
+                          ": prefixes must not contain whitespace");
       continue;
     }
     if (HasPrefixConflict(*rules, type, prefix)) {

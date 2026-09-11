@@ -173,6 +173,19 @@ TEST(SearchEngineTest, ParseQueryMarksRecognizedPrefixMode) {
   ASSERT_EQ(QString("git"), parsed.query);
 }
 
+TEST(SearchEngineTest, PrefixMatchingIsCaseInsensitive) {
+  SearchEngine engine;
+  engine.setSearchPrefixes(DefaultPrefixes());
+  engine.setItems({
+      MakeUrlItem("GitHub", {"git"}, "https://github.com"),
+      MakeSnippetItem("Git Snippet", {"git"}, "git status"),
+  });
+
+  const auto results = engine.search("S GIT", 3);
+  ASSERT_EQ(std::size_t(1), results.size());
+  ASSERT_EQ(QString("Git Snippet"), results[0]->name);
+}
+
 TEST(SearchEngineTest, RecognizedPrefixCanReturnMoreThanTopK) {
   SearchEngine engine;
   engine.setSearchPrefixes(DefaultPrefixes());

@@ -361,6 +361,40 @@ url = "s"
   fs::remove_all(root);
 }
 
+TEST(ConfigTest, WhitespaceAndCaseInsensitiveDuplicatePrefixesAreIgnored) {
+  const fs::path root =
+      fs::temp_directory_path() / "surfpanel_invalid_prefix_spacing_root";
+  fs::remove_all(root);
+
+  WriteTomlFile(root, "items.toml",
+                R"([[items]]
+name = "Open GitHub"
+type = "url"
+keywords = ["git"]
+[items.payload]
+url = "https://github.com"
+
+[search.prefixes]
+snippet = "clip mode"
+url = "S"
+)");
+
+  const auto result = LoadConfigFromRoot(root);
+  ASSERT_TRUE(result.ok);
+  ASSERT_CONTAINS(result.message, "must not contain whitespace");
+  ASSERT_CONTAINS(result.message, "Ignoring duplicate search prefix");
+
+  const auto *snippetPrefix =
+      FindPrefixByType(result.searchPrefixes, "snippet");
+  const auto *urlPrefix = FindPrefixByType(result.searchPrefixes, "url");
+  ASSERT_NE(nullptr, snippetPrefix);
+  ASSERT_NE(nullptr, urlPrefix);
+  ASSERT_EQ(QString("s"), snippetPrefix->prefix);
+  ASSERT_EQ(QString("u"), urlPrefix->prefix);
+
+  fs::remove_all(root);
+}
+
 TEST(ConfigTest, MissingImportsWarnButValidMainConfigStillLoads) {
   const fs::path root =
       fs::temp_directory_path() / "surfpanel_missing_import_root";
