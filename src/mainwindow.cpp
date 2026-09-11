@@ -1,9 +1,10 @@
 #include "mainwindow.h"
 
 #include "config.h"
+#include "fluent_panel.h"
+#include "search_result_view.h"
 
 #include <QAbstractItemView>
-#include <QAbstractListModel>
 #include <QAction>
 #include <QApplication>
 #include <QCoreApplication>
@@ -12,27 +13,19 @@
 #include <QDir>
 #include <QEvent>
 #include <QFile>
-#include <QFont>
-#include <QFrame>
 #include <QGraphicsDropShadowEffect>
 #include <QGuiApplication>
 #include <QIcon>
 #include <QImage>
 #include <QKeyEvent>
 #include <QLineEdit>
-#include <QLinearGradient>
 #include <QListView>
 #include <QMenu>
-#include <QPainter>
-#include <QPainterPath>
-#include <QPen>
 #include <QProcess>
 #include <QScreen>
 #include <QSettings>
 #include <QShortcut>
 #include <QSignalBlocker>
-#include <QStyleOptionViewItem>
-#include <QStyledItemDelegate>
 #include <QSystemTrayIcon>
 #include <QTimer>
 #include <QUrl>
@@ -53,195 +46,6 @@ namespace fs = std::filesystem;
 namespace {
 QColor AccentForegroundColor(const QColor &accent);
 }
-
-class SearchResultListModel final : public QAbstractListModel {
-public:
-  enum Roles {
-    TypeRole = Qt::UserRole + 1,
-  };
-
-  explicit SearchResultListModel(QObject *parent = nullptr)
-      : QAbstractListModel(parent) {}
-
-  int rowCount(const QModelIndex &parent = QModelIndex()) const override {
-    if (parent.isValid()) {
-      return 0;
-    }
-    return static_cast<int>(results_.size());
-  }
-
-  QVariant data(const QModelIndex &index, int role) const override {
-    if (!index.isValid() || index.row() < 0 ||
-        index.row() >= static_cast<int>(results_.size())) {
-      return {};
-    }
-
-    const StringItem *item = results_[index.row()];
-    if (item == nullptr) {
-      return {};
-    }
-
-    if (role == Qt::DisplayRole) {
-      return item->name;
-    }
-
-    if (role == TypeRole) {
-      return item->type;
-    }
-
-    return {};
-  }
-
-  void setResults(std::vector<const StringItem *> results) {
-    beginResetModel();
-    results_ = std::move(results);
-    endResetModel();
-  }
-
-  const StringItem *itemAt(int row) const {
-    if (row < 0 || row >= static_cast<int>(results_.size())) {
-      return nullptr;
-    }
-    return results_[row];
-  }
-
-private:
-  std::vector<const StringItem *> results_;
-};
-
-class SearchResultItemDelegate final : public QStyledItemDelegate {
-public:
-  explicit SearchResultItemDelegate(QObject *parent = nullptr)
-      : QStyledItemDelegate(parent), darkMode_(false) {}
-
-  void setTheme(bool darkMode) { darkMode_ = darkMode; }
-
-  QSize sizeHint(const QStyleOptionViewItem &option,
-                 const QModelIndex &) const override {
-    return {option.rect.width(), 44};
-  }
-
-  void paint(QPainter *painter, const QStyleOptionViewItem &option,
-             const QModelIndex &index) const override {
-    painter->save();
-    painter->setRenderHint(QPainter::Antialiasing, true);
-
-    const QRect rowRect = option.rect.adjusted(6, 2, -6, -2);
-    const bool selected = (option.state & QStyle::State_Selected) != 0;
-    const bool hovered = (option.state & QStyle::State_MouseOver) != 0;
-
-    if (selected || hovered) {
-      const QColor rowBg =
-          selected
-              ? (darkMode_ ? QColor(255, 255, 255, 28) : QColor(0, 0, 0, 16))
-              : (darkMode_ ? QColor(255, 255, 255, 14) : QColor(0, 0, 0, 7));
-      painter->setPen(Qt::NoPen);
-      painter->setBrush(rowBg);
-      painter->drawRoundedRect(rowRect, 6, 6);
-    }
-
-    const QString name = index.data(Qt::DisplayRole).toString();
-    const QString typeRaw =
-        index.data(SearchResultListModel::TypeRole).toString();
-    const bool isUrl = typeRaw.compare("url", Qt::CaseInsensitive) == 0;
-    const QString typeText = isUrl ? "URL" : "SNIPPET";
-
-    QFont nameFont = option.font;
-    nameFont.setPointSizeF(11.0);
-    nameFont.setWeight(QFont::Medium);
-    painter->setFont(nameFont);
-
-    const QFontMetrics nameMetrics(nameFont);
-
-    QFont typeFont = option.font;
-    typeFont.setPointSizeF(9.0);
-    typeFont.setWeight(QFont::Medium);
-    const QFontMetrics typeMetrics(typeFont);
-    const int typeWidth = typeMetrics.horizontalAdvance(typeText);
-    const QRect typeRect(rowRect.right() - typeWidth - 14, rowRect.top(),
-                         typeWidth, rowRect.height());
-
-    const QRect nameRect = rowRect.adjusted(14, 0, -typeWidth - 32, 0);
-    painter->setFont(nameFont);
-    painter->setPen(darkMode_ ? QColor("#F1F5F9") : QColor("#1F1F1F"));
-    painter->drawText(
-        nameRect, Qt::AlignVCenter | Qt::AlignLeft,
-        nameMetrics.elidedText(name, Qt::ElideRight, nameRect.width()));
-
-    painter->setFont(typeFont);
-    painter->setPen(darkMode_ ? QColor(148, 163, 184) : QColor(104, 104, 104));
-    painter->drawText(typeRect, Qt::AlignVCenter | Qt::AlignRight, typeText);
-
-    painter->restore();
-  }
-
-private:
-  bool darkMode_;
-};
-
-class FluentPanel final : public QFrame {
-public:
-  explicit FluentPanel(QWidget *parent = nullptr)
-      : QFrame(parent), baseColor_(Qt::transparent),
-        borderColor_(Qt::transparent), cornerRadius_(8), darkMode_(false) {
-    setAttribute(Qt::WA_TranslucentBackground, true);
-    setAutoFillBackground(false);
-  }
-
-  void setThemeColors(const QColor &baseColor, const QColor &borderColor,
-                      bool darkMode) {
-    baseColor_ = baseColor;
-    borderColor_ = borderColor;
-    darkMode_ = darkMode;
-    update();
-  }
-
-  void setCornerRadius(int radius) {
-    if (cornerRadius_ == radius) {
-      return;
-    }
-    cornerRadius_ = radius;
-    update();
-  }
-
-protected:
-  void paintEvent(QPaintEvent *event) override {
-    Q_UNUSED(event);
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-
-    QRectF rect = this->rect();
-    rect.adjust(0.5, 0.5, -0.5, -0.5);
-
-    QPainterPath path;
-    path.addRoundedRect(rect, cornerRadius_, cornerRadius_);
-
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(baseColor_);
-    painter.drawPath(path);
-
-    painter.save();
-    painter.setClipPath(path);
-
-    QLinearGradient gradient(rect.topLeft(), rect.bottomLeft());
-    gradient.setColorAt(0.0, QColor(255, 255, 255, darkMode_ ? 10 : 2));
-    gradient.setColorAt(1.0, QColor(0, 0, 0, darkMode_ ? 18 : 3));
-    painter.setBrush(gradient);
-    painter.drawRect(rect);
-
-    painter.restore();
-
-    painter.setPen(QPen(borderColor_, 1));
-    painter.setBrush(Qt::NoBrush);
-    painter.drawPath(path);
-  }
-
-private:
-  QColor baseColor_;
-  QColor borderColor_;
-  int cornerRadius_;
-  bool darkMode_;
-};
 
 namespace {
 

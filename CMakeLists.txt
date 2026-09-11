@@ -31,7 +31,9 @@ target_sources(SurfPanel
   src/mainwindow.cpp
   src/resources.qrc
   src/config.cpp
+  src/fluent_panel.cpp
   src/recent_items_store.cpp
+  src/search_result_view.cpp
   src/search_engine.cpp
   src/app_logging.cpp
 )

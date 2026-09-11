@@ -47,7 +47,9 @@ add_executable(test_mainwindow
 	../src/action_manager.cpp
 	../src/variable_resolver.cpp
 	../src/config.cpp
+	../src/fluent_panel.cpp
 	../src/recent_items_store.cpp
+	../src/search_result_view.cpp
 )
 target_include_directories(test_mainwindow PRIVATE ../src)
 target_link_libraries(test_mainwindow PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets toml11::toml11)
