@@ -1,5 +1,7 @@
 #include "app_logging.h"
 
+#include "app_paths.h"
+
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
@@ -12,8 +14,7 @@
 namespace {
 
 QString LogDirPath() {
-  const QString base = QCoreApplication::applicationDirPath();
-  return base + "/log";
+  return QString::fromStdWString((AppDataRoot() / "log").wstring());
 }
 
 QString LogFilePath() {

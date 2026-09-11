@@ -1,4 +1,5 @@
 #include "config.h"
+#include "app_paths.h"
 #include "toml.hpp"
 #include <QCoreApplication>
 #include <QDebug>
@@ -327,6 +328,40 @@ std::string JoinMessages(const std::vector<std::string> &messages) {
   return oss.str();
 }
 
+std::optional<fs::path> FindBundledConfigRoot() {
+  const QString appDir = QCoreApplication::applicationDirPath();
+#ifdef _WIN32
+  const fs::path executableDir(appDir.toStdWString());
+#else
+  const fs::path executableDir = fs::u8path(appDir.toUtf8().toStdString());
+#endif
+  const std::vector<fs::path> candidates = {
+      executableDir / "config",
+      executableDir / ".." / "config", // for debug
+  };
+
+  for (const auto &candidate : candidates) {
+    std::error_code ec;
+    if (fs::exists(candidate, ec) && fs::is_directory(candidate, ec)) {
+      return candidate;
+    }
+  }
+
+  return std::nullopt;
+}
+
+bool CopyBundledConfig(const fs::path &source, const fs::path &destination) {
+  std::error_code ec;
+  fs::create_directories(destination, ec);
+  if (ec) {
+    return false;
+  }
+
+  fs::copy(source, destination,
+           fs::copy_options::recursive | fs::copy_options::skip_existing, ec);
+  return !ec;
+}
+
 bool WriteItemsToToml(const fs::path &path,
                       const std::vector<StringItem> &items,
                       std::string *error) {
@@ -415,19 +450,21 @@ std::vector<SearchPrefixRule> DefaultSearchPrefixes() {
 }
 
 std::optional<fs::path> FindConfigRoot() {
-  const QString appDir = QCoreApplication::applicationDirPath();
-  const std::vector<fs::path> candidates = {
-      fs::path(appDir.toStdString()) / "config",
-      fs::path(appDir.toStdString()) / ".." / "config", // for debug
-  };
-
-  for (const auto &candidate : candidates) {
-    std::error_code ec;
-    if (fs::exists(candidate, ec) && fs::is_directory(candidate, ec)) {
-      return candidate;
-    }
+  const fs::path userConfig = UserConfigRoot();
+  std::error_code ec;
+  if (fs::exists(userConfig / "items.toml", ec)) {
+    return userConfig;
   }
 
+  const auto bundledConfig = FindBundledConfigRoot();
+  if (!bundledConfig.has_value() ||
+      !CopyBundledConfig(*bundledConfig, userConfig)) {
+    return std::nullopt;
+  }
+
+  if (fs::exists(userConfig / "items.toml", ec)) {
+    return userConfig;
+  }
   return std::nullopt;
 }
 

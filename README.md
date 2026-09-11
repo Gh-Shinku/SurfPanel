@@ -16,10 +16,11 @@ imports can pull in package files when you want to share or reuse item groups.
 
 ### Config Location
 
-SurfPanel searches for the config root in this order:
-
-1. `config/` next to the executable
-2. `../config/` relative to the executable, for local debug builds
+On first launch, SurfPanel copies the default `config/` next to the executable
+(or `../config/` for local debug builds) into its user configuration directory.
+It subsequently reads and writes only that user copy, so application updates do
+not overwrite your configuration. The exact location follows Qt's per-user
+`AppConfigLocation` for SurfPanel.
 
 ### Directory Layout
 

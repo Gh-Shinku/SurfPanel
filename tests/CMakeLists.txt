@@ -1,5 +1,6 @@
 add_executable(test_config
 	test_config.cpp
+	../src/app_paths.cpp
 	../src/config.cpp
 )
 target_include_directories(test_config PRIVATE ../src)
@@ -29,6 +30,7 @@ target_link_libraries(test_variable_resolver PRIVATE Qt6::Core)
 
 add_executable(test_recent_items_store
 	test_recent_items_store.cpp
+	../src/app_paths.cpp
 	../src/recent_items_store.cpp
 )
 target_include_directories(test_recent_items_store PRIVATE ../src)
@@ -36,6 +38,7 @@ target_link_libraries(test_recent_items_store PRIVATE Qt6::Core toml11::toml11)
 
 add_executable(test_mainwindow
 	test_mainwindow.cpp
+	../src/app_paths.cpp
 	../src/mainwindow.cpp
 	../src/search_engine.cpp
 	../src/action_manager.cpp

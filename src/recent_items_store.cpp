@@ -1,7 +1,7 @@
 #include "recent_items_store.h"
 
+#include "app_paths.h"
 #include "toml.hpp"
-#include <QCoreApplication>
 #include <QString>
 #include <algorithm>
 #include <fstream>
@@ -26,12 +26,7 @@ RecentItemKey RecentKeyForItem(const StringItem &item) {
 }
 
 std::filesystem::path DefaultRecentItemsPath() {
-  const QString appDir = QCoreApplication::applicationDirPath();
-#ifdef _WIN32
-  return fs::path(appDir.toStdWString()) / "recent_items.toml";
-#else
-  return fs::path(appDir.toStdString()) / "recent_items.toml";
-#endif
+  return AppDataRoot() / "recent_items.toml";
 }
 
 RecentItemsStore::RecentItemsStore(std::filesystem::path path)
