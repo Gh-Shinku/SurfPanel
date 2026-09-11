@@ -9,10 +9,10 @@ target_link_libraries(test_config PRIVATE Qt6::Core toml11::toml11)
 
 add_executable(test_clipboard_filter
 	test_clipboard_filter.cpp
-	../src/clipboard_filter.cpp
+	../src/plugins/clipboard_filter/clipboard_filter_plugin.cpp
 )
 target_include_directories(test_clipboard_filter PRIVATE ../src)
-target_link_libraries(test_clipboard_filter PRIVATE Qt6::Core)
+target_link_libraries(test_clipboard_filter PRIVATE Qt6::Core toml11::toml11)
 
 add_executable(test_plugin_manager
 	test_plugin_manager.cpp
@@ -56,7 +56,9 @@ add_executable(test_mainwindow
 	test_mainwindow.cpp
 	../src/app_paths.cpp
 	../src/atomic_file.cpp
-	../src/clipboard_filter.cpp
+	../src/plugin/builtin_plugins.cpp
+	../src/plugin/plugin_manager.cpp
+	../src/plugins/clipboard_filter/clipboard_filter_plugin.cpp
 	../src/mainwindow.cpp
 	../src/search_engine.cpp
 	../src/action_manager.cpp

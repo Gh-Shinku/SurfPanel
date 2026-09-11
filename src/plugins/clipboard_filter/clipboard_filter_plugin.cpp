@@ -1,19 +1,106 @@
-#include "clipboard_filter.h"
+#include "clipboard_filter_plugin.h"
+
+#include "toml.hpp"
 
 #include <QDebug>
 #include <QFileInfo>
 #include <QTimer>
 #include <algorithm>
+#include <filesystem>
 #include <utility>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
 #endif
 
+namespace fs = std::filesystem;
+
 namespace {
 
 constexpr int kClipboardRetryDelayMs = 25;
 constexpr int kClipboardMaxRetries = 3;
+
+QString JoinMessages(const std::vector<QString> &messages) {
+  QString result;
+  for (const auto &message : messages) {
+    if (!result.isEmpty()) {
+      result += '\n';
+    }
+    result += message;
+  }
+  return result;
+}
+
+PluginConfigurationResult ParseConfiguration(const toml::value &value,
+                                             bool legacy,
+                                             ClipboardFilterConfig *config) {
+  std::vector<QString> messages;
+  if (legacy) {
+    messages.push_back(
+        "using deprecated [clipboard_filter] configuration; move it to "
+        "plugins/clipboard-filter.toml");
+  }
+
+  if (!value.is_table()) {
+    return {PluginConfigurationState::Invalid,
+            JoinMessages(messages) + (messages.empty() ? "" : "\n") +
+                "configuration must be a table"};
+  }
+
+  const auto enabled = toml::find_or(value, "enabled", toml::value{false});
+  if (!enabled.is_boolean()) {
+    messages.push_back("enabled must be a boolean");
+    return {PluginConfigurationState::Invalid, JoinMessages(messages)};
+  }
+  if (!enabled.as_boolean()) {
+    return {PluginConfigurationState::Disabled, JoinMessages(messages)};
+  }
+
+#ifndef Q_OS_WIN
+  messages.push_back("clipboard monitoring is only supported on Windows");
+  return {PluginConfigurationState::Invalid, JoinMessages(messages)};
+#else
+  const auto sources =
+      toml::find_or(value, "source_processes", toml::value{toml::array{}});
+  if (!sources.is_array()) {
+    messages.push_back("source_processes must be an array of process names");
+    return {PluginConfigurationState::Invalid, JoinMessages(messages)};
+  }
+
+  config->enabled = true;
+  for (const auto &source : sources.as_array()) {
+    if (!source.is_string()) {
+      messages.push_back("ignoring a non-string source process");
+      continue;
+    }
+
+    const QString process =
+        QString::fromStdString(source.as_string()).trimmed();
+    if (process.isEmpty() || process.contains('/') || process.contains('\\')) {
+      messages.push_back("ignoring invalid source process: " +
+                         QString::fromStdString(source.as_string()));
+      continue;
+    }
+
+    const bool duplicate = std::any_of(
+        config->sourceProcesses.cbegin(), config->sourceProcesses.cend(),
+        [&process](const QString &existing) {
+          return existing.compare(process, Qt::CaseInsensitive) == 0;
+        });
+    if (!duplicate) {
+      config->sourceProcesses.push_back(process);
+    }
+  }
+
+  if (config->sourceProcesses.empty()) {
+    *config = ClipboardFilterConfig{};
+    messages.push_back("enabled but no valid source processes were configured");
+    return {PluginConfigurationState::Invalid, JoinMessages(messages)};
+  }
+
+  return {PluginConfigurationState::Enabled, JoinMessages(messages)};
+#endif
+}
 
 #ifdef Q_OS_WIN
 QString ProcessNameForWindow(HWND owner) {
@@ -50,12 +137,9 @@ class NativeClipboardBackend final : public ClipboardBackend {
 public:
   explicit NativeClipboardBackend(WId hostWindow) : hostWindow_(hostWindow) {}
 
-  void setHostWindow(WId hostWindow) { hostWindow_ = hostWindow; }
-
   ClipboardReadResult read() override {
     ClipboardReadResult result;
-    const HWND owner = GetClipboardOwner();
-    result.content.ownerProcessName = ProcessNameForWindow(owner);
+    result.content.ownerProcessName = ProcessNameForWindow(GetClipboardOwner());
 
     if (!OpenClipboard(nullptr)) {
       result.status = ClipboardReadStatus::Busy;
@@ -200,54 +284,97 @@ ClipboardProcessResult ClipboardProcessor::process(ClipboardBackend *backend) {
   return ClipboardProcessResult::Written;
 }
 
-ClipboardFilter::ClipboardFilter(QObject *parent)
-    : QObject(parent), processor_(transformer_) {}
+ClipboardFilterPlugin::ClipboardFilterPlugin() : processor_(transformer_) {}
 
-ClipboardFilter::~ClipboardFilter() { disable(); }
+ClipboardFilterPlugin::~ClipboardFilterPlugin() { stop(); }
 
-void ClipboardFilter::applyConfiguration(const ClipboardFilterConfig &config,
-                                         WId hostWindow) {
-  disable();
-  config_ = config;
-  hostWindow_ = hostWindow;
+PluginMetadata ClipboardFilterPlugin::metadata() const {
+  return {"clipboard-filter", "Clipboard Filter", kSurfPanelPluginApiVersion};
+}
+
+PluginConfigurationResult
+ClipboardFilterPlugin::configure(const PluginConfigurationContext &context) {
+  stop();
+  config_ = ClipboardFilterConfig{};
   processor_.setConfiguration(config_);
-  ++generation_;
 
+  try {
+    toml::value value;
+    bool legacy = false;
+    if (fs::exists(context.pluginConfigPath)) {
+      value = toml::parse(context.pluginConfigPath, toml::spec::v(1, 1, 0));
+    } else if (fs::exists(context.legacyMainConfigPath)) {
+      const auto root =
+          toml::parse(context.legacyMainConfigPath, toml::spec::v(1, 1, 0));
+      if (!root.contains("clipboard_filter")) {
+        return {};
+      }
+      value = toml::find(root, "clipboard_filter");
+      legacy = true;
+    } else {
+      return {};
+    }
+
+    PluginConfigurationResult result =
+        ParseConfiguration(value, legacy, &config_);
+    if (result.state == PluginConfigurationState::Enabled) {
+      processor_.setConfiguration(config_);
+    }
+    return result;
+  } catch (const std::exception &error) {
+    return {PluginConfigurationState::Invalid,
+            QString("failed to parse configuration: %1").arg(error.what())};
+  }
+}
+
+bool ClipboardFilterPlugin::start(const PluginHostContext &context) {
+  stop();
 #ifdef Q_OS_WIN
-  if (!config_.enabled || config_.sourceProcesses.empty() || hostWindow_ == 0) {
-    return;
+  if (!config_.enabled || config_.sourceProcesses.empty() ||
+      context.eventLoopOwner == nullptr || context.nativeWindow == 0) {
+    return false;
   }
 
-  backend_ = CreateClipboardBackend(hostWindow_);
-  listening_ = backend_ != nullptr &&
-               AddClipboardFormatListener(reinterpret_cast<HWND>(hostWindow_));
+  hostContext_ = context;
+  backend_ = CreateClipboardBackend(context.nativeWindow);
+  listening_ =
+      backend_ != nullptr &&
+      AddClipboardFormatListener(reinterpret_cast<HWND>(context.nativeWindow));
   if (!listening_) {
+    log(QtCriticalMsg, "failed to register clipboard format listener");
     backend_.reset();
-    qWarning() << "Failed to register the clipboard format listener.";
+    hostContext_ = PluginHostContext{};
+    return false;
   }
+  return true;
 #else
-  Q_UNUSED(hostWindow_);
+  Q_UNUSED(context);
+  return false;
 #endif
 }
 
-void ClipboardFilter::disable() {
+void ClipboardFilterPlugin::stop() {
   ++generation_;
   processing_ = false;
 #ifdef Q_OS_WIN
   if (listening_) {
-    RemoveClipboardFormatListener(reinterpret_cast<HWND>(hostWindow_));
+    RemoveClipboardFormatListener(
+        reinterpret_cast<HWND>(hostContext_.nativeWindow));
   }
 #endif
   listening_ = false;
   backend_.reset();
-  hostWindow_ = 0;
-  config_ = ClipboardFilterConfig{};
-  processor_.setConfiguration(config_);
+  hostContext_ = PluginHostContext{};
 }
 
+bool ClipboardFilterPlugin::handleNativeEvent(const QByteArray &eventType,
+                                              void *message, qintptr *result) {
+  Q_UNUSED(eventType);
+  Q_UNUSED(result);
 #ifdef Q_OS_WIN
-bool ClipboardFilter::handleNativeMessage(unsigned int message) {
-  if (!listening_ || message != WM_CLIPBOARDUPDATE) {
+  const auto *nativeMessage = static_cast<MSG *>(message);
+  if (!listening_ || nativeMessage == nullptr ||
+      nativeMessage->message != WM_CLIPBOARDUPDATE) {
     return false;
   }
   if (!processing_) {
@@ -255,10 +382,13 @@ bool ClipboardFilter::handleNativeMessage(unsigned int message) {
     scheduleProcessing(0);
   }
   return true;
-}
+#else
+  Q_UNUSED(message);
+  return false;
 #endif
+}
 
-void ClipboardFilter::scheduleProcessing(int attempt) {
+void ClipboardFilterPlugin::scheduleProcessing(int attempt) {
   const int generation = generation_;
   const int delay = attempt == 0 ? 0 : kClipboardRetryDelayMs;
   QTimer::singleShot(delay, this, [this, generation, attempt]() {
@@ -272,10 +402,19 @@ void ClipboardFilter::scheduleProcessing(int attempt) {
       scheduleProcessing(attempt + 1);
       return;
     }
-
     if (result == ClipboardProcessResult::WriteFailed) {
-      qWarning() << "Failed to write filtered clipboard text.";
+      log(QtWarningMsg, "failed to write filtered clipboard text");
     }
     processing_ = false;
   });
+}
+
+void ClipboardFilterPlugin::log(QtMsgType type, const QString &message) const {
+  if (hostContext_.log) {
+    hostContext_.log(type, message);
+  } else if (type == QtCriticalMsg || type == QtFatalMsg) {
+    qCritical().noquote() << message;
+  } else {
+    qWarning().noquote() << message;
+  }
 }

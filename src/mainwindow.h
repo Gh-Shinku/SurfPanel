@@ -2,8 +2,8 @@
 #define mainwindow_h
 
 #include "action_manager.h"
-#include "clipboard_filter.h"
 #include "item.h"
+#include "plugin/plugin_manager.h"
 #include "recent_items_store.h"
 #include "search_engine.h"
 #include <QColor>
@@ -94,7 +94,7 @@ private:
   SearchEngine searchEngine_;
   ActionManager actionManager_;
   DefaultActionContext actionContext_;
-  ClipboardFilter clipboardFilter_;
+  PluginManager pluginManager_;
   RecentItemsStore recentItemsStore_;
   std::vector<StringItem> items_;
 

@@ -28,7 +28,6 @@ struct ParsedItem {
 struct MainConfig {
   std::vector<fs::path> imports;
   std::vector<SearchPrefixRule> searchPrefixes;
-  ClipboardFilterConfig clipboardFilter;
 };
 
 std::vector<SearchPrefixRule> MakeDefaultSearchPrefixes() {
@@ -336,67 +335,6 @@ void ReadSearchPrefixes(const toml::value &root,
   }
 }
 
-void ReadClipboardFilterConfig(const toml::value &root,
-                               ClipboardFilterConfig *config,
-                               std::vector<std::string> *warnings) {
-  const auto filterValue =
-      toml::find_or(root, "clipboard_filter", toml::value{toml::table{}});
-  if (!filterValue.is_table()) {
-    warnings->push_back("clipboard_filter must be a table; disabling filter");
-    return;
-  }
-
-  const auto enabledValue =
-      toml::find_or(filterValue, "enabled", toml::value{false});
-  if (!enabledValue.is_boolean()) {
-    warnings->push_back("clipboard_filter.enabled must be a boolean");
-    return;
-  }
-  if (!enabledValue.as_boolean()) {
-    return;
-  }
-
-  const auto sourcesValue = toml::find_or(filterValue, "source_processes",
-                                          toml::value{toml::array{}});
-  if (!sourcesValue.is_array()) {
-    warnings->push_back(
-        "clipboard_filter.source_processes must be an array of process names");
-    return;
-  }
-
-  for (const auto &source : sourcesValue.as_array()) {
-    if (!source.is_string()) {
-      warnings->push_back(
-          "Ignoring clipboard filter source: value must be a string");
-      continue;
-    }
-
-    const QString process =
-        QString::fromStdString(source.as_string()).trimmed();
-    if (process.isEmpty() || process.contains('/') || process.contains('\\')) {
-      warnings->push_back("Ignoring invalid clipboard filter process name: " +
-                          source.as_string());
-      continue;
-    }
-
-    const bool duplicate = std::any_of(
-        config->sourceProcesses.cbegin(), config->sourceProcesses.cend(),
-        [&process](const QString &existing) {
-          return existing.compare(process, Qt::CaseInsensitive) == 0;
-        });
-    if (!duplicate) {
-      config->sourceProcesses.push_back(process);
-    }
-  }
-
-  if (config->sourceProcesses.empty()) {
-    warnings->push_back(
-        "clipboard_filter is enabled but has no valid source processes");
-    return;
-  }
-  config->enabled = true;
-}
-
 MainConfig ReadMainConfig(const fs::path &mainPath,
                           std::vector<std::string> *warnings) {
   auto root = toml::parse(mainPath, toml::spec::v(1, 1, 0));
@@ -418,7 +356,6 @@ MainConfig ReadMainConfig(const fs::path &mainPath,
   }
 
   ReadSearchPrefixes(root, &config.searchPrefixes, warnings);
-  ReadClipboardFilterConfig(root, &config.clipboardFilter, warnings);
 
   return config;
 }
@@ -521,7 +458,6 @@ ConfigLoadResult TryLoadFallback(const fs::path &configRoot,
   ConfigLoadResult fallback;
   fallback.configRoot = configRoot;
   fallback.searchPrefixes = MakeDefaultSearchPrefixes();
-  fallback.clipboardFilter = ClipboardFilterConfig{};
   fallback.ok = false;
 
   const std::vector<fs::path> candidates = {
@@ -598,7 +534,6 @@ ConfigLoadResult LoadConfigFromRoot(const fs::path &configRoot) {
     sourceEntries = mainConfig.imports;
     sourceEntries.emplace_back("items.toml");
     result.searchPrefixes = mainConfig.searchPrefixes;
-    result.clipboardFilter = mainConfig.clipboardFilter;
   } catch (const toml::syntax_error &err) {
     result.ok = false;
     result.message = "TOML parse error in " + mainPath.string() + ":\n" +

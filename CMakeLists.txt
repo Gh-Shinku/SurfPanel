@@ -41,7 +41,9 @@ target_sources(SurfPanel
   src/action_manager.cpp
   src/app_paths.cpp
   src/atomic_file.cpp
-  src/clipboard_filter.cpp
+  src/plugin/builtin_plugins.cpp
+  src/plugin/plugin_manager.cpp
+  src/plugins/clipboard_filter/clipboard_filter_plugin.cpp
   src/variable_resolver.cpp
   src/main.cpp
   src/mainwindow.cpp
@@ -54,6 +56,7 @@ target_sources(SurfPanel
   src/app_logging.cpp
 )
 
+target_include_directories(SurfPanel PRIVATE src)
 target_link_libraries(SurfPanel PRIVATE Qt6::Widgets toml11::toml11)
 if(MINGW)
   target_link_options(SurfPanel PRIVATE $<$<CONFIG:Release>:-s>)

@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "fluent_panel.h"
+#include "plugin/builtin_plugins.h"
 #include "search_result_view.h"
 
 #include <QAbstractItemView>
@@ -35,6 +36,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <optional>
+#include <utility>
 #include <variant>
 
 #ifdef Q_OS_WIN
@@ -139,9 +141,12 @@ MainWindow::MainWindow(QWidget *parent, bool enableHotkey)
       isDarkMode_(false), trayIcon_(nullptr), trayMenu_(nullptr),
       showPanelAction_(nullptr), showConfigDirAction_(nullptr),
       reloadConfigAction_(nullptr), autoStartAction_(nullptr),
-      exitAction_(nullptr), clipboardFilter_(this),
-      globalHotkeyRegistered_(false), hotkeyId_(1), fallbackShortcut_(nullptr) {
+      exitAction_(nullptr), globalHotkeyRegistered_(false), hotkeyId_(1),
+      fallbackShortcut_(nullptr) {
   RegisterDefaultActions(&actionManager_);
+  if (!RegisterBuiltinPlugins(&pluginManager_)) {
+    qCritical() << "Failed to register built-in plugins.";
+  }
 
   setupWindow();
   setupUi();
@@ -155,7 +160,7 @@ MainWindow::MainWindow(QWidget *parent, bool enableHotkey)
 }
 
 MainWindow::~MainWindow() {
-  clipboardFilter_.disable();
+  pluginManager_.shutdown();
 #ifdef Q_OS_WIN
   if (globalHotkeyRegistered_) {
     UnregisterHotKey(reinterpret_cast<HWND>(winId()), hotkeyId_);
@@ -205,16 +210,19 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
 bool MainWindow::nativeEvent(const QByteArray &eventType, void *message,
                              qintptr *result) {
   MSG *msg = static_cast<MSG *>(message);
-  if (msg != nullptr && clipboardFilter_.handleNativeMessage(msg->message)) {
+  const bool pluginHandled =
+      pluginManager_.handleNativeEvent(eventType, message, result);
+
+  if (msg != nullptr && msg->message == WM_HOTKEY &&
+      static_cast<int>(msg->wParam) == hotkeyId_) {
+    toggleVisibilityFromHotkey();
     if (result != nullptr) {
       *result = 0;
     }
     return true;
   }
 
-  if (msg != nullptr && msg->message == WM_HOTKEY &&
-      static_cast<int>(msg->wParam) == hotkeyId_) {
-    toggleVisibilityFromHotkey();
+  if (pluginHandled) {
     if (result != nullptr) {
       *result = 0;
     }
@@ -545,7 +553,7 @@ void MainWindow::setupHotkeyPlaceholder(bool enableHotkey) {
 ConfigLoadResult MainWindow::loadBackendItems() {
   const auto configRoot = FindConfigRoot();
   if (!configRoot.has_value()) {
-    clipboardFilter_.disable();
+    pluginManager_.shutdown();
     items_.clear();
     searchEngine_.setItems({});
     searchEngine_.setSearchPrefixes(DefaultSearchPrefixes());
@@ -557,12 +565,25 @@ ConfigLoadResult MainWindow::loadBackendItems() {
   }
 
   auto result = LoadConfigWithFallback(*configRoot);
-#ifdef Q_OS_WIN
   createWinId();
-  clipboardFilter_.applyConfiguration(result.clipboardFilter, winId());
-#else
-  clipboardFilter_.applyConfiguration(result.clipboardFilter, 0);
-#endif
+  PluginHostContext pluginHost;
+  pluginHost.eventLoopOwner = this;
+  pluginHost.nativeWindow = winId();
+  pluginHost.log = [](QtMsgType type, const QString &message) {
+    if (type == QtCriticalMsg || type == QtFatalMsg) {
+      qCritical().noquote() << message;
+    } else {
+      qWarning().noquote() << message;
+    }
+  };
+  pluginManager_.initialize(std::move(pluginHost));
+  const PluginReloadReport pluginReport = pluginManager_.reload(*configRoot);
+  if (!pluginReport.messages.isEmpty()) {
+    if (!result.message.empty()) {
+      result.message += '\n';
+    }
+    result.message += pluginReport.messages.join('\n').toStdString();
+  }
   items_ = result.items;
   searchEngine_.setItems(result.items);
   searchEngine_.setSearchPrefixes(result.searchPrefixes);

@@ -1,13 +1,16 @@
 #pragma once
 
-#include "clipboard_filter_config.h"
+#include "plugin/plugin.h"
 
 #include <QObject>
-#include <QtGlobal>
-#include <QtGui/qwindowdefs.h>
 #include <memory>
 #include <optional>
 #include <vector>
+
+struct ClipboardFilterConfig {
+  bool enabled = false;
+  std::vector<QString> sourceProcesses;
+};
 
 enum class ClipboardReadStatus {
   Ready,
@@ -77,26 +80,28 @@ private:
   std::optional<quint32> selfWrittenSequence_;
 };
 
-class ClipboardFilter final : public QObject {
+class ClipboardFilterPlugin final : public QObject, public IPlugin {
 public:
-  explicit ClipboardFilter(QObject *parent = nullptr);
-  ~ClipboardFilter() override;
+  ClipboardFilterPlugin();
+  ~ClipboardFilterPlugin() override;
 
-  void applyConfiguration(const ClipboardFilterConfig &config, WId hostWindow);
-  void disable();
-
-#ifdef Q_OS_WIN
-  bool handleNativeMessage(unsigned int message);
-#endif
+  PluginMetadata metadata() const override;
+  PluginConfigurationResult
+  configure(const PluginConfigurationContext &context) override;
+  bool start(const PluginHostContext &context) override;
+  void stop() override;
+  bool handleNativeEvent(const QByteArray &eventType, void *message,
+                         qintptr *result) override;
 
 private:
   void scheduleProcessing(int attempt);
+  void log(QtMsgType type, const QString &message) const;
 
   ClipboardFilterConfig config_;
   IdentityTextTransformer transformer_;
   ClipboardProcessor processor_;
   std::unique_ptr<ClipboardBackend> backend_;
-  WId hostWindow_ = 0;
+  PluginHostContext hostContext_;
   bool listening_ = false;
   bool processing_ = false;
   int generation_ = 0;

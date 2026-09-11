@@ -1,6 +1,8 @@
-#include "clipboard_filter.h"
+#include "plugins/clipboard_filter/clipboard_filter_plugin.h"
 #include "test_harness.h"
 
+#include <filesystem>
+#include <fstream>
 #include <utility>
 
 namespace {
@@ -53,6 +55,30 @@ ClipboardFilterConfig EnabledForSumatra() {
   config.sourceProcesses = {"SumatraPDF.exe"};
   return config;
 }
+
+namespace fs = std::filesystem;
+
+struct PluginConfigFixture {
+  fs::path root = fs::temp_directory_path() / "surfpanel_clipboard_plugin_test";
+
+  PluginConfigFixture() {
+    fs::remove_all(root);
+    fs::create_directories(root / "plugins");
+  }
+
+  ~PluginConfigFixture() { fs::remove_all(root); }
+
+  void write(const fs::path &relativePath, const std::string &content) {
+    fs::create_directories((root / relativePath).parent_path());
+    std::ofstream output(root / relativePath);
+    output << content;
+  }
+
+  PluginConfigurationContext context() const {
+    return {root, root / "plugins" / "clipboard-filter.toml",
+            root / "items.toml"};
+  }
+};
 
 } // namespace
 
@@ -134,6 +160,70 @@ TEST(ClipboardFilterTest, SelfWrittenSequenceIsIgnored) {
   backend.readResult = ReadyText("SurfPanel.exe", "normalized", 42);
   ASSERT_EQ(ClipboardProcessResult::Ignored, processor.process(&backend));
   ASSERT_EQ(1, backend.writeCallCount);
+}
+
+TEST(ClipboardFilterTest, MissingConfigurationDisablesPlugin) {
+  PluginConfigFixture fixture;
+  ClipboardFilterPlugin plugin;
+
+  const auto result = plugin.configure(fixture.context());
+
+  ASSERT_EQ(PluginConfigurationState::Disabled, result.state);
+  ASSERT_TRUE(result.message.isEmpty());
+}
+
+TEST(ClipboardFilterTest, DedicatedConfigurationEnablesPlugin) {
+  PluginConfigFixture fixture;
+  fixture.write("plugins/clipboard-filter.toml", R"(enabled = true
+source_processes = ["SumatraPDF.exe", "sumatrapdf.EXE"]
+)");
+  ClipboardFilterPlugin plugin;
+
+  const auto result = plugin.configure(fixture.context());
+
+  ASSERT_EQ(PluginConfigurationState::Enabled, result.state);
+}
+
+TEST(ClipboardFilterTest, InvalidDedicatedConfigurationIsIsolated) {
+  PluginConfigFixture fixture;
+  fixture.write("plugins/clipboard-filter.toml", R"(enabled = true
+source_processes = []
+)");
+  ClipboardFilterPlugin plugin;
+
+  const auto result = plugin.configure(fixture.context());
+
+  ASSERT_EQ(PluginConfigurationState::Invalid, result.state);
+  ASSERT_TRUE(result.message.contains("no valid source processes"));
+}
+
+TEST(ClipboardFilterTest, LegacyConfigurationIsAcceptedWithWarning) {
+  PluginConfigFixture fixture;
+  fixture.write("items.toml", R"([clipboard_filter]
+enabled = true
+source_processes = ["SumatraPDF.exe"]
+)");
+  ClipboardFilterPlugin plugin;
+
+  const auto result = plugin.configure(fixture.context());
+
+  ASSERT_EQ(PluginConfigurationState::Enabled, result.state);
+  ASSERT_TRUE(result.message.contains("deprecated"));
+}
+
+TEST(ClipboardFilterTest, DedicatedConfigurationWinsOverLegacy) {
+  PluginConfigFixture fixture;
+  fixture.write("plugins/clipboard-filter.toml", "enabled = [\n");
+  fixture.write("items.toml", R"([clipboard_filter]
+enabled = true
+source_processes = ["SumatraPDF.exe"]
+)");
+  ClipboardFilterPlugin plugin;
+
+  const auto result = plugin.configure(fixture.context());
+
+  ASSERT_EQ(PluginConfigurationState::Invalid, result.state);
+  ASSERT_TRUE(!result.message.contains("deprecated"));
 }
 
 int main() { return RUN_ALL_TESTS(); }

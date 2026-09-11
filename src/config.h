@@ -1,7 +1,6 @@
 #ifndef SURFPANEL_CONFIG_H
 #define SURFPANEL_CONFIG_H
 
-#include "clipboard_filter_config.h"
 #include "item.h"
 #include <filesystem>
 #include <optional>
@@ -11,7 +10,6 @@
 struct ConfigLoadResult {
   std::vector<StringItem> items;
   std::vector<SearchPrefixRule> searchPrefixes;
-  ClipboardFilterConfig clipboardFilter;
   std::filesystem::path configRoot;
   bool usedFallback = false;
   bool ok = true;
