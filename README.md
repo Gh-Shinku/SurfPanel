@@ -9,6 +9,25 @@ rebuilding.
 
 ![SurfPanel](./assets/SurfPanel.png)
 
+## Development Requirements
+
+Install Qt6 (Core and Widgets) and Ninja, then set `SURFPANEL_QT_ROOT` to the
+Qt installation prefix—the directory that contains `lib/cmake/Qt6/Qt6Config.cmake`.
+CMake deliberately stops with a clear error when this variable is absent or
+invalid.
+
+PowerShell, for the current terminal:
+
+```powershell
+$env:SURFPANEL_QT_ROOT = "C:\Qt\6.8.0\mingw_64"
+```
+
+To persist it for future terminals on Windows:
+
+```powershell
+[Environment]::SetEnvironmentVariable("SURFPANEL_QT_ROOT", "C:\Qt\6.8.0\mingw_64", "User")
+```
+
 ## Configuration
 
 SurfPanel uses a single main TOML file for everyday configuration. Optional

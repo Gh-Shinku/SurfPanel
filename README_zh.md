@@ -4,6 +4,24 @@ SurfPanel 是一个轻量级桌面命令面板，用于快速访问书签和文�
 
 ![SurfPanel](./assets/SurfPanel.png)
 
+## 开发环境要求
+
+安装 Qt6（Core 和 Widgets）与 Ninja，并将 `SURFPANEL_QT_ROOT` 设置为 Qt
+安装前缀，即包含 `lib/cmake/Qt6/Qt6Config.cmake` 的目录。该变量缺失或路径无效时，
+CMake 会明确报错并停止配置。
+
+PowerShell 当前终端示例：
+
+```powershell
+$env:SURFPANEL_QT_ROOT = "C:\Qt\6.8.0\mingw_64"
+```
+
+在 Windows 中持久写入用户环境变量：
+
+```powershell
+[Environment]::SetEnvironmentVariable("SURFPANEL_QT_ROOT", "C:\Qt\6.8.0\mingw_64", "User")
+```
+
 ## 配置
 
 SurfPanel 使用单个主 TOML 文件进行日常配置。可选的导入功能可以在需要共享或复用项目组时拉取包文件。

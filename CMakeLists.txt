@@ -15,6 +15,21 @@ set(CMAKE_AUTOUIC ON)
 
 option(BUILD_TESTS "Build and run tests" ON)
 
+set(SURFPANEL_QT_ROOT "$ENV{SURFPANEL_QT_ROOT}")
+if(SURFPANEL_QT_ROOT STREQUAL "")
+  message(FATAL_ERROR
+    "SURFPANEL_QT_ROOT is required. Set it to the Qt6 installation prefix "
+    "before configuring, for example: C:/Qt/6.8.0/mingw_64")
+endif()
+
+file(TO_CMAKE_PATH "${SURFPANEL_QT_ROOT}" SURFPANEL_QT_ROOT)
+if(NOT EXISTS "${SURFPANEL_QT_ROOT}/lib/cmake/Qt6/Qt6Config.cmake")
+  message(FATAL_ERROR
+    "SURFPANEL_QT_ROOT does not contain lib/cmake/Qt6/Qt6Config.cmake: "
+    "${SURFPANEL_QT_ROOT}")
+endif()
+
+list(PREPEND CMAKE_PREFIX_PATH "${SURFPANEL_QT_ROOT}")
 find_package(Qt6 COMPONENTS Core Widgets REQUIRED)
 
 add_subdirectory(third-party/toml11)

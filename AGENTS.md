@@ -5,8 +5,9 @@
 - C++17 Qt6 Widgets desktop application, built with CMake and Ninja.
 - `toml11` is a git submodule dependency; keep third-party code untouched unless
   explicitly updating it.
-- Configure with `make cg-debug` or `make cg-release`. Pass local CMake options
-  without committing them, e.g. `make cg-debug CMAKE_ARGS='-DCMAKE_PREFIX_PATH=/path/to/Qt6'`.
+- Before configuring, set `SURFPANEL_QT_ROOT` to the Qt installation prefix
+  containing `lib/cmake/Qt6/Qt6Config.cmake`; CMake fails clearly when it is
+  missing or invalid. Configure with `make cg-debug` or `make cg-release`.
 - Build with `make build`; run tests with `make test`. CTest configures Qt and
   compiler runtime paths automatically on Windows.
 
