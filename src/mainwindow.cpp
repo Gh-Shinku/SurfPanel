@@ -114,9 +114,7 @@ public:
   explicit SearchResultItemDelegate(QObject *parent = nullptr)
       : QStyledItemDelegate(parent), darkMode_(false) {}
 
-  void setTheme(bool darkMode) {
-    darkMode_ = darkMode;
-  }
+  void setTheme(bool darkMode) { darkMode_ = darkMode; }
 
   QSize sizeHint(const QStyleOptionViewItem &option,
                  const QModelIndex &) const override {
@@ -134,10 +132,9 @@ public:
 
     if (selected || hovered) {
       const QColor rowBg =
-          selected ? (darkMode_ ? QColor(255, 255, 255, 28)
-                                : QColor(0, 0, 0, 16))
-                   : (darkMode_ ? QColor(255, 255, 255, 14)
-                                : QColor(0, 0, 0, 7));
+          selected
+              ? (darkMode_ ? QColor(255, 255, 255, 28) : QColor(0, 0, 0, 16))
+              : (darkMode_ ? QColor(255, 255, 255, 14) : QColor(0, 0, 0, 7));
       painter->setPen(Qt::NoPen);
       painter->setBrush(rowBg);
       painter->drawRoundedRect(rowRect, 6, 6);
@@ -335,11 +332,11 @@ MainWindow::MainWindow(QWidget *parent, bool enableHotkey)
     : QMainWindow(parent), input_(nullptr), resultsView_(nullptr),
       resultsModel_(nullptr), resultsDelegate_(nullptr), panel_(nullptr),
       panelShadow_(nullptr), accentColor_(QColor("#005FB8")),
-      isDarkMode_(false), trayIcon_(nullptr),
-      trayMenu_(nullptr), showPanelAction_(nullptr),
-      showConfigDirAction_(nullptr), reloadConfigAction_(nullptr),
-      autoStartAction_(nullptr), exitAction_(nullptr),
-      globalHotkeyRegistered_(false), hotkeyId_(1), fallbackShortcut_(nullptr) {
+      isDarkMode_(false), trayIcon_(nullptr), trayMenu_(nullptr),
+      showPanelAction_(nullptr), showConfigDirAction_(nullptr),
+      reloadConfigAction_(nullptr), autoStartAction_(nullptr),
+      exitAction_(nullptr), globalHotkeyRegistered_(false), hotkeyId_(1),
+      fallbackShortcut_(nullptr) {
   RegisterDefaultActions(&actionManager_);
 
   setupWindow();
@@ -763,6 +760,14 @@ ConfigLoadResult MainWindow::loadBackendItems() {
 void MainWindow::showPanel() {
   updateTheme();
 
+#ifdef Q_OS_WIN
+  const HWND foregroundWindow = GetForegroundWindow();
+  if (foregroundWindow != nullptr &&
+      foregroundWindow != reinterpret_cast<HWND>(winId())) {
+    actionContext_.setNativePasteTarget(foregroundWindow);
+  }
+#endif
+
   if (isVisible()) {
     onQueryTextChanged(input_->text());
     raise();
@@ -782,13 +787,19 @@ void MainWindow::showPanel() {
   input_->selectAll();
 }
 
-void MainWindow::hidePanel() {
+void MainWindow::hidePanel(bool clearPasteTarget) {
   if (!isVisible()) {
     return;
   }
 
   hide();
   setWindowOpacity(1.0);
+
+#ifdef Q_OS_WIN
+  if (clearPasteTarget) {
+    actionContext_.clearNativePasteTarget();
+  }
+#endif
 }
 
 void MainWindow::reloadConfig() {
@@ -1002,14 +1013,20 @@ void MainWindow::invokeItemAction(const StringItem *item) {
     return;
   }
 
-  hidePanel();
+  hidePanel(false);
   input_->clear();
   resultsModel_->setResults({});
 
   const RecentItemKey recentKey = RecentKeyForItem(*item);
 
   QTimer::singleShot(0, this, [this, actionName, payload, recentKey]() {
-    if (!actionManager_.invoke(actionName, payload)) {
+    const bool actionSucceeded =
+        actionManager_.invoke(actionName, payload, actionContext_);
+#ifdef Q_OS_WIN
+    actionContext_.clearNativePasteTarget();
+#endif
+
+    if (!actionSucceeded) {
       qWarning() << "Failed to invoke action:"
                  << QString::fromStdString(actionName);
       return;

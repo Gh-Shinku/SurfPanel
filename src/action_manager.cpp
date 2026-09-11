@@ -10,6 +10,10 @@
 #include <QUrl>
 #include <QVariant>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 namespace {
 
 bool TryInvokeInsertMethod(QObject *target, const char *signature,
@@ -83,9 +87,41 @@ bool DefaultActionContext::copyToClipboard(const QString &text) {
 }
 
 bool DefaultActionContext::injectIntoActiveInput(const QString &text) {
+#ifdef Q_OS_WIN
+  if (nativePasteTarget_ != nullptr) {
+    const HWND target = static_cast<HWND>(nativePasteTarget_);
+    if (GetForegroundWindow() != target) {
+      return false;
+    }
+
+    INPUT inputs[4] = {};
+    inputs[0].type = INPUT_KEYBOARD;
+    inputs[0].ki.wVk = VK_CONTROL;
+    inputs[1].type = INPUT_KEYBOARD;
+    inputs[1].ki.wVk = 'V';
+    inputs[2].type = INPUT_KEYBOARD;
+    inputs[2].ki.wVk = 'V';
+    inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
+    inputs[3].type = INPUT_KEYBOARD;
+    inputs[3].ki.wVk = VK_CONTROL;
+    inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
+    return SendInput(4, inputs, sizeof(INPUT)) == 4;
+  }
+#endif
+
   QObject *focus = QGuiApplication::focusObject();
   return InjectIntoInputObject(focus, text);
 }
+
+#ifdef Q_OS_WIN
+void DefaultActionContext::setNativePasteTarget(void *window) {
+  nativePasteTarget_ = window;
+}
+
+void DefaultActionContext::clearNativePasteTarget() {
+  nativePasteTarget_ = nullptr;
+}
+#endif
 
 bool OpenUrlAction::invoke(const QString &payload,
                            ActionContext &context) const {

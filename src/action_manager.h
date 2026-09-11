@@ -29,6 +29,16 @@ public:
   bool openUrlInDefaultBrowser(const QUrl &url) override;
   bool copyToClipboard(const QString &text) override;
   bool injectIntoActiveInput(const QString &text) override;
+
+#ifdef Q_OS_WIN
+  void setNativePasteTarget(void *window);
+  void clearNativePasteTarget();
+#endif
+
+private:
+#ifdef Q_OS_WIN
+  void *nativePasteTarget_ = nullptr;
+#endif
 };
 
 class OpenUrlAction final : public Action {

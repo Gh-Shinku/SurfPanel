@@ -52,7 +52,7 @@ private:
   void setupHotkeyPlaceholder(bool enableHotkey);
   ConfigLoadResult loadBackendItems();
   void showPanel();
-  void hidePanel();
+  void hidePanel(bool clearPasteTarget = true);
   void updateTheme();
   void updatePanelBackground();
   void updateDropShadow();
@@ -92,6 +92,7 @@ private:
 
   SearchEngine searchEngine_;
   ActionManager actionManager_;
+  DefaultActionContext actionContext_;
   RecentItemsStore recentItemsStore_;
   std::vector<StringItem> items_;
 
