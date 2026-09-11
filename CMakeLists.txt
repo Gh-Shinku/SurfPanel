@@ -41,6 +41,7 @@ target_sources(SurfPanel
   src/action_manager.cpp
   src/app_paths.cpp
   src/atomic_file.cpp
+  src/clipboard_filter.cpp
   src/variable_resolver.cpp
   src/main.cpp
   src/mainwindow.cpp

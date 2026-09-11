@@ -139,8 +139,8 @@ MainWindow::MainWindow(QWidget *parent, bool enableHotkey)
       isDarkMode_(false), trayIcon_(nullptr), trayMenu_(nullptr),
       showPanelAction_(nullptr), showConfigDirAction_(nullptr),
       reloadConfigAction_(nullptr), autoStartAction_(nullptr),
-      exitAction_(nullptr), globalHotkeyRegistered_(false), hotkeyId_(1),
-      fallbackShortcut_(nullptr) {
+      exitAction_(nullptr), clipboardFilter_(this),
+      globalHotkeyRegistered_(false), hotkeyId_(1), fallbackShortcut_(nullptr) {
   RegisterDefaultActions(&actionManager_);
 
   setupWindow();
@@ -155,6 +155,7 @@ MainWindow::MainWindow(QWidget *parent, bool enableHotkey)
 }
 
 MainWindow::~MainWindow() {
+  clipboardFilter_.disable();
 #ifdef Q_OS_WIN
   if (globalHotkeyRegistered_) {
     UnregisterHotKey(reinterpret_cast<HWND>(winId()), hotkeyId_);
@@ -204,6 +205,13 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
 bool MainWindow::nativeEvent(const QByteArray &eventType, void *message,
                              qintptr *result) {
   MSG *msg = static_cast<MSG *>(message);
+  if (msg != nullptr && clipboardFilter_.handleNativeMessage(msg->message)) {
+    if (result != nullptr) {
+      *result = 0;
+    }
+    return true;
+  }
+
   if (msg != nullptr && msg->message == WM_HOTKEY &&
       static_cast<int>(msg->wParam) == hotkeyId_) {
     toggleVisibilityFromHotkey();
@@ -537,6 +545,7 @@ void MainWindow::setupHotkeyPlaceholder(bool enableHotkey) {
 ConfigLoadResult MainWindow::loadBackendItems() {
   const auto configRoot = FindConfigRoot();
   if (!configRoot.has_value()) {
+    clipboardFilter_.disable();
     items_.clear();
     searchEngine_.setItems({});
     searchEngine_.setSearchPrefixes(DefaultSearchPrefixes());
@@ -548,6 +557,12 @@ ConfigLoadResult MainWindow::loadBackendItems() {
   }
 
   auto result = LoadConfigWithFallback(*configRoot);
+#ifdef Q_OS_WIN
+  createWinId();
+  clipboardFilter_.applyConfiguration(result.clipboardFilter, winId());
+#else
+  clipboardFilter_.applyConfiguration(result.clipboardFilter, 0);
+#endif
   items_ = result.items;
   searchEngine_.setItems(result.items);
   searchEngine_.setSearchPrefixes(result.searchPrefixes);

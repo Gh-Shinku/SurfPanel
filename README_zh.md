@@ -128,6 +128,22 @@ snippet = "{{date}}"
 
 使用托盘菜单中的 **Reload Config** 选项重新读取 `config/items.toml` 及其导入，无需重启应用。
 
+### 可选 PDF 剪贴板过滤器
+
+Windows 剪贴板过滤器默认关闭。若要监听从 SumatraPDF 复制的文本，请在主
+`items.toml` 中加入以下内容并重新加载配置：
+
+```toml
+[clipboard_filter]
+enabled = true
+source_processes = ["SumatraPDF.exe"]
+```
+
+仅处理由配置来源进程拥有的 Unicode 文本。当前转换器是 identity 占位实现，
+暂不会改动文本；后续 PDF 规范化规则会接入同一过滤器。转换后的写入仅保留
+Unicode 文本。若希望 Ditto 捕获 SurfPanel 处理后的写入，请在 Ditto 中单独排除
+`SumatraPDF.exe`，避免捕获原始内容。
+
 ### 实时变量
 
 URL 和片段负载可以包含实时变量。SurfPanel 在激活项目时根据本地系统时间解析这些变量：

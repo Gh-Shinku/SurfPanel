@@ -144,6 +144,24 @@ snippet = "{{date}}"
 Use the tray menu option **Reload Config** to re-read `config/items.toml` and
 its imports without restarting the app.
 
+### Optional PDF Clipboard Filter
+
+The Windows clipboard filter is disabled by default. To monitor text copied
+from SumatraPDF, add the following to the main `items.toml` and reload config:
+
+```toml
+[clipboard_filter]
+enabled = true
+source_processes = ["SumatraPDF.exe"]
+```
+
+Only Unicode text owned by a configured source process is considered. The
+current transformer is an identity placeholder, so it does not alter text yet;
+future PDF normalization rules will plug into the same filter. A transformed
+write replaces the clipboard with Unicode text only. Configure Ditto separately
+to exclude `SumatraPDF.exe` if you want Ditto to capture SurfPanel's processed
+write instead of the original.
+
 ### Realtime Variables
 
 URL and snippet payloads can include realtime variables. SurfPanel resolves

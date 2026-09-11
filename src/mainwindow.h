@@ -2,6 +2,7 @@
 #define mainwindow_h
 
 #include "action_manager.h"
+#include "clipboard_filter.h"
 #include "item.h"
 #include "recent_items_store.h"
 #include "search_engine.h"
@@ -93,6 +94,7 @@ private:
   SearchEngine searchEngine_;
   ActionManager actionManager_;
   DefaultActionContext actionContext_;
+  ClipboardFilter clipboardFilter_;
   RecentItemsStore recentItemsStore_;
   std::vector<StringItem> items_;
 

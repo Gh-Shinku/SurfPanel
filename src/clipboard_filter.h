@@ -1,0 +1,103 @@
+#pragma once
+
+#include "clipboard_filter_config.h"
+
+#include <QObject>
+#include <QtGlobal>
+#include <QtGui/qwindowdefs.h>
+#include <memory>
+#include <optional>
+#include <vector>
+
+enum class ClipboardReadStatus {
+  Ready,
+  Busy,
+  Unavailable,
+};
+
+struct ClipboardContent {
+  QString ownerProcessName;
+  QString unicodeText;
+  quint32 sequenceNumber = 0;
+  bool hasUnicodeText = false;
+};
+
+struct ClipboardReadResult {
+  ClipboardReadStatus status = ClipboardReadStatus::Unavailable;
+  ClipboardContent content;
+};
+
+class SourceMatcher {
+public:
+  void setSourceProcesses(const std::vector<QString> &sourceProcesses);
+  bool matches(const QString &processName) const;
+  bool empty() const;
+
+private:
+  std::vector<QString> sourceProcesses_;
+};
+
+class TextTransformer {
+public:
+  virtual ~TextTransformer() = default;
+  virtual QString transform(const QString &text) const = 0;
+};
+
+class IdentityTextTransformer final : public TextTransformer {
+public:
+  QString transform(const QString &text) const override;
+};
+
+class ClipboardBackend {
+public:
+  virtual ~ClipboardBackend() = default;
+  virtual ClipboardReadResult read() = 0;
+  virtual bool writeUnicodeText(const QString &text,
+                                quint32 *sequenceNumber) = 0;
+};
+
+enum class ClipboardProcessResult {
+  Ignored,
+  Retry,
+  WriteFailed,
+  Written,
+};
+
+class ClipboardProcessor {
+public:
+  explicit ClipboardProcessor(const TextTransformer &transformer);
+
+  void setConfiguration(const ClipboardFilterConfig &config);
+  ClipboardProcessResult process(ClipboardBackend *backend);
+
+private:
+  SourceMatcher sourceMatcher_;
+  const TextTransformer &transformer_;
+  bool enabled_ = false;
+  std::optional<quint32> selfWrittenSequence_;
+};
+
+class ClipboardFilter final : public QObject {
+public:
+  explicit ClipboardFilter(QObject *parent = nullptr);
+  ~ClipboardFilter() override;
+
+  void applyConfiguration(const ClipboardFilterConfig &config, WId hostWindow);
+  void disable();
+
+#ifdef Q_OS_WIN
+  bool handleNativeMessage(unsigned int message);
+#endif
+
+private:
+  void scheduleProcessing(int attempt);
+
+  ClipboardFilterConfig config_;
+  IdentityTextTransformer transformer_;
+  ClipboardProcessor processor_;
+  std::unique_ptr<ClipboardBackend> backend_;
+  WId hostWindow_ = 0;
+  bool listening_ = false;
+  bool processing_ = false;
+  int generation_ = 0;
+};

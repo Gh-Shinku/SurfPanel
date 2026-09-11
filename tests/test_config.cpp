@@ -177,6 +177,7 @@ url = "https://github.com"
   ASSERT_TRUE(result.ok);
   ASSERT_EQ(std::size_t(1), result.items.size());
   ASSERT_EQ(QString("Open GitHub"), result.items[0].name);
+  ASSERT_TRUE(!result.clipboardFilter.enabled);
 
   fs::remove_all(root);
 }
@@ -351,6 +352,59 @@ url = "web"
   fs::remove_all(root);
 }
 
+TEST(ConfigTest, ParsesClipboardFilterConfiguration) {
+  const fs::path root =
+      fs::temp_directory_path() / "surfpanel_clipboard_filter_root";
+  fs::remove_all(root);
+
+  WriteTomlFile(root, "items.toml",
+                R"([[items]]
+name = "Open GitHub"
+type = "url"
+[items.payload]
+url = "https://github.com"
+
+[clipboard_filter]
+enabled = true
+source_processes = ["SumatraPDF.exe", "sumatrapdf.EXE", "invalid/path.exe"]
+)");
+
+  const auto result = LoadConfigFromRoot(root);
+  ASSERT_TRUE(result.ok);
+  ASSERT_TRUE(result.clipboardFilter.enabled);
+  ASSERT_EQ(std::size_t(1), result.clipboardFilter.sourceProcesses.size());
+  ASSERT_EQ(QString("SumatraPDF.exe"),
+            result.clipboardFilter.sourceProcesses[0]);
+  ASSERT_CONTAINS(result.message, "Ignoring invalid clipboard filter process");
+
+  fs::remove_all(root);
+}
+
+TEST(ConfigTest, InvalidClipboardFilterStaysDisabled) {
+  const fs::path root =
+      fs::temp_directory_path() / "surfpanel_invalid_clipboard_filter_root";
+  fs::remove_all(root);
+
+  WriteTomlFile(root, "items.toml",
+                R"([[items]]
+name = "Open GitHub"
+type = "url"
+[items.payload]
+url = "https://github.com"
+
+[clipboard_filter]
+enabled = true
+source_processes = []
+)");
+
+  const auto result = LoadConfigFromRoot(root);
+  ASSERT_TRUE(result.ok);
+  ASSERT_TRUE(!result.clipboardFilter.enabled);
+  ASSERT_CONTAINS(result.message, "has no valid source processes");
+
+  fs::remove_all(root);
+}
+
 TEST(ConfigTest, InvalidMainConfigSearchPrefixesWarnAndKeepDefaults) {
   const fs::path root =
       fs::temp_directory_path() / "surfpanel_invalid_prefix_main_root";
@@ -499,6 +553,7 @@ url = "https://example.com"
   ASSERT_TRUE(result.usedFallback);
   ASSERT_EQ(std::size_t(1), result.items.size());
   ASSERT_EQ(QString("Fallback"), result.items[0].name);
+  ASSERT_TRUE(!result.clipboardFilter.enabled);
 
   fs::remove_all(root);
 }
