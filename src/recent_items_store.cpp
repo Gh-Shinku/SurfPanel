@@ -1,10 +1,10 @@
 #include "recent_items_store.h"
 
 #include "app_paths.h"
+#include "atomic_file.h"
 #include "toml.hpp"
 #include <QString>
 #include <algorithm>
-#include <fstream>
 #include <system_error>
 #include <utility>
 
@@ -83,13 +83,8 @@ bool RecentItemsStore::save(const std::vector<RecentItemKey> &items) const {
   toml::table root;
   root["recent"] = recent;
 
-  std::ofstream out(path_, std::ios::binary | std::ios::trunc);
-  if (!out) {
-    return false;
-  }
-
-  out << toml::format(toml::value(root));
-  return true;
+  return WriteFileAtomically(
+      path_, QByteArray::fromStdString(toml::format(toml::value(root))));
 }
 
 bool RecentItemsStore::recordUse(const RecentItemKey &item,

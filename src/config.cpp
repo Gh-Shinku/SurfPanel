@@ -1,5 +1,6 @@
 #include "config.h"
 #include "app_paths.h"
+#include "atomic_file.h"
 #include "toml.hpp"
 #include <QCoreApplication>
 #include <QDebug>
@@ -7,7 +8,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <filesystem>
-#include <fstream>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -395,15 +395,14 @@ bool WriteItemsToToml(const fs::path &path,
   toml::table root;
   root["items"] = itemsArray;
 
-  std::ofstream out(path, std::ios::binary | std::ios::trunc);
-  if (!out) {
+  if (!WriteFileAtomically(
+          path, QByteArray::fromStdString(toml::format(toml::value(root))))) {
     if (error != nullptr) {
       *error = "Failed to write config cache: " + path.string();
     }
     return false;
   }
 
-  out << toml::format(toml::value(root));
   return true;
 }
 
