@@ -28,6 +28,7 @@ struct ParsedItem {
 struct MainConfig {
   std::vector<fs::path> imports;
   std::vector<SearchPrefixRule> searchPrefixes;
+  VariableSettings variableSettings;
 };
 
 std::vector<SearchPrefixRule> MakeDefaultSearchPrefixes() {
@@ -287,6 +288,58 @@ std::vector<fs::path> ExpandSourcePath(const fs::path &root,
   return {resolved};
 }
 
+void ApplyDateTimeFormat(const std::string &key, const QString &value,
+                         QString *target, std::vector<std::string> *warnings) {
+  const std::string label = "datetime." + key;
+  QString reason;
+  const FormatCheck check = CheckDateTimeFormat(value, &reason);
+
+  if (check == FormatCheck::Invalid) {
+    warnings->push_back("Ignoring " + label + ": " + reason.toStdString() +
+                        "; keeping the default format");
+    return;
+  }
+  if (check == FormatCheck::Suspect) {
+    warnings->push_back("Suspicious " + label + ": " + reason.toStdString());
+  }
+  *target = value;
+}
+
+void ReadDateTimeSettings(const toml::value &root, VariableSettings *settings,
+                          std::vector<std::string> *warnings) {
+  const auto dateTimeValue =
+      toml::find_or(root, "datetime", toml::value{toml::table{}});
+  if (!dateTimeValue.is_table()) {
+    warnings->push_back(
+        "datetime must be a table; using default datetime formats");
+    return;
+  }
+
+  const auto &table = dateTimeValue.as_table();
+  for (const auto &entry : table) {
+    if (entry.first != "date_format" && entry.first != "time_format" &&
+        entry.first != "datetime_format") {
+      warnings->push_back("Ignoring unknown datetime setting: " + entry.first);
+      continue;
+    }
+    if (!entry.second.is_string()) {
+      warnings->push_back("Ignoring datetime." + entry.first +
+                          ": value must be a string");
+      continue;
+    }
+
+    const QString value = QString::fromStdString(entry.second.as_string());
+    if (entry.first == "date_format") {
+      ApplyDateTimeFormat(entry.first, value, &settings->dateFormat, warnings);
+    } else if (entry.first == "time_format") {
+      ApplyDateTimeFormat(entry.first, value, &settings->timeFormat, warnings);
+    } else {
+      ApplyDateTimeFormat(entry.first, value, &settings->dateTimeFormat,
+                          warnings);
+    }
+  }
+}
+
 void ReadSearchPrefixes(const toml::value &root,
                         std::vector<SearchPrefixRule> *rules,
                         std::vector<std::string> *warnings) {
@@ -355,6 +408,7 @@ MainConfig ReadMainConfig(const fs::path &mainPath,
     config.imports.push_back(PathFromTomlString(importEntry.as_string()));
   }
 
+  ReadDateTimeSettings(root, &config.variableSettings, warnings);
   ReadSearchPrefixes(root, &config.searchPrefixes, warnings);
 
   return config;
@@ -411,7 +465,7 @@ bool CopyBundledConfig(const fs::path &source, const fs::path &destination) {
 
 bool WriteItemsToToml(const fs::path &path,
                       const std::vector<StringItem> &items,
-                      std::string *error) {
+                      const VariableSettings &settings, std::string *error) {
   toml::array itemsArray;
   for (const auto &item : items) {
     toml::table itemTable;
@@ -442,6 +496,13 @@ bool WriteItemsToToml(const fs::path &path,
   toml::table root;
   root["items"] = itemsArray;
 
+  // Keep user overrides usable through the fallback cache as well.
+  toml::table datetimeTable;
+  datetimeTable["date_format"] = settings.dateFormat.toStdString();
+  datetimeTable["time_format"] = settings.timeFormat.toStdString();
+  datetimeTable["datetime_format"] = settings.dateTimeFormat.toStdString();
+  root["datetime"] = datetimeTable;
+
   if (!WriteFileAtomically(
           path, QByteArray::fromStdString(toml::format(toml::value(root))))) {
     if (error != nullptr) {
@@ -451,6 +512,18 @@ bool WriteItemsToToml(const fs::path &path,
   }
 
   return true;
+}
+
+VariableSettings ReadCacheDateTimeSettings(const fs::path &path,
+                                           std::vector<std::string> *warnings) {
+  VariableSettings settings;
+  try {
+    const auto root = toml::parse(path, toml::spec::v(1, 1, 0));
+    ReadDateTimeSettings(root, &settings, warnings);
+  } catch (const std::exception &) {
+    // Item loading reports the failure; defaults are good enough here.
+  }
+  return settings;
 }
 
 ConfigLoadResult TryLoadFallback(const fs::path &configRoot,
@@ -470,10 +543,16 @@ ConfigLoadResult TryLoadFallback(const fs::path &configRoot,
     }
     try {
       fallback.items = loadStringItems(candidate);
+      std::vector<std::string> warnings;
+      fallback.variableSettings =
+          ReadCacheDateTimeSettings(candidate, &warnings);
       fallback.usedFallback = true;
       fallback.ok = true;
       fallback.message = "Config load failed; using fallback: " +
                          candidate.filename().string();
+      for (const auto &warning : warnings) {
+        fallback.message += "\n" + warning;
+      }
       if (!previousMessage.empty()) {
         fallback.message += "\n" + previousMessage;
       }
@@ -534,6 +613,7 @@ ConfigLoadResult LoadConfigFromRoot(const fs::path &configRoot) {
     sourceEntries = mainConfig.imports;
     sourceEntries.emplace_back("items.toml");
     result.searchPrefixes = mainConfig.searchPrefixes;
+    result.variableSettings = mainConfig.variableSettings;
   } catch (const toml::syntax_error &err) {
     result.ok = false;
     result.message = "TOML parse error in " + mainPath.string() + ":\n" +
@@ -581,7 +661,8 @@ ConfigLoadResult LoadConfigFromRoot(const fs::path &configRoot) {
   const fs::path lastGoodPath = cacheDir / "compiled.toml";
 
   std::string cacheError;
-  if (!WriteItemsToToml(lastGoodPath, result.items, &cacheError)) {
+  if (!WriteItemsToToml(lastGoodPath, result.items, result.variableSettings,
+                        &cacheError)) {
     warnings.push_back(cacheError);
   }
 

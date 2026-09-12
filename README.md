@@ -203,6 +203,39 @@ these when you activate an item, using the local system time:
 - `{{time}}`: current time as `HH:mm:ss`
 - `{{datetime}}`: current date and time as `yyyy/MM/dd HH:mm:ss`
 
+Add a colon to format a single usage with your own pattern:
+
+```toml
+[items.payload]
+snippet = "{{date:yyyy-MM-dd}}"       # 2026-05-17
+snippet = "{{date:yyyy年M月d日 dddd}}" # 2026年5月17日 星期日
+snippet = "{{datetime:yyyy-MM-dd'T'HH:mm}}"
+```
+
+The pattern is everything after the first colon, so time fields are fine:
+`{{time:HH:mm}}`. Bare variables keep the configured defaults below.
+
+To change the defaults for every item, add a `[datetime]` table to
+`items.toml` and reload the config from the tray menu:
+
+```toml
+[datetime]
+date_format = "yyyy-MM-dd"
+time_format = "HH:mm"
+datetime_format = "yyyy-MM-dd HH:mm:ss"
+```
+
+Patterns use Qt date/time syntax, not `strftime`: `yyyy` year, `MM` month,
+`dd` day, `HH` hour, `mm` minutes, `ss` seconds, `dddd` weekday name,
+`MMM`/`MMMM` month name. Enclose literal letters in single quotes, as in
+`yyyy-MM-dd'T'HH:mm`. Weekday and month names follow the system language;
+numeric fields are locale independent.
+
+Common mistakes are reported as config warnings and fall back to the default
+format: `%Y`-style `strftime` placeholders, patterns without any date or time
+field, and empty values. A pattern such as `yyyy-mm-dd` is accepted with a
+warning because lowercase `m` means minutes.
+
 Unknown variables are left unchanged.
 
 ### Fallback Behavior

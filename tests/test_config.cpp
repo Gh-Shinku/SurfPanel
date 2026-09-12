@@ -503,4 +503,167 @@ url = "https://example.com"
   fs::remove_all(root);
 }
 
+TEST(ConfigTest, ParsesDateTimeFormats) {
+  const fs::path root = fs::temp_directory_path() / "surfpanel_datetime_root";
+  fs::remove_all(root);
+
+  WriteTomlFile(root, "items.toml",
+                R"([[items]]
+name = "Date"
+type = "snippet"
+[items.payload]
+snippet = "{{date}}"
+
+[datetime]
+date_format = "yyyy-MM-dd"
+time_format = "HH:mm"
+datetime_format = "yyyy-MM-dd HH:mm"
+)");
+
+  const auto result = LoadConfigFromRoot(root);
+  ASSERT_TRUE(result.ok);
+  ASSERT_EQ(QString("yyyy-MM-dd"), result.variableSettings.dateFormat);
+  ASSERT_EQ(QString("HH:mm"), result.variableSettings.timeFormat);
+  ASSERT_EQ(QString("yyyy-MM-dd HH:mm"),
+            result.variableSettings.dateTimeFormat);
+
+  fs::remove_all(root);
+}
+
+TEST(ConfigTest, UnsetDateTimeFormatsKeepDefaults) {
+  const fs::path root =
+      fs::temp_directory_path() / "surfpanel_datetime_default_root";
+  fs::remove_all(root);
+
+  WriteTomlFile(root, "items.toml",
+                R"([[items]]
+name = "Date"
+type = "snippet"
+[items.payload]
+snippet = "{{date}}"
+)");
+
+  const VariableSettings defaults;
+  const auto result = LoadConfigFromRoot(root);
+  ASSERT_TRUE(result.ok);
+  ASSERT_EQ(defaults.dateFormat, result.variableSettings.dateFormat);
+  ASSERT_EQ(defaults.timeFormat, result.variableSettings.timeFormat);
+  ASSERT_EQ(defaults.dateTimeFormat, result.variableSettings.dateTimeFormat);
+
+  fs::remove_all(root);
+}
+
+TEST(ConfigTest, InvalidDateTimeFormatsWarnAndKeepDefaults) {
+  const fs::path root =
+      fs::temp_directory_path() / "surfpanel_datetime_invalid_root";
+  fs::remove_all(root);
+
+  WriteTomlFile(root, "items.toml",
+                R"([[items]]
+name = "Date"
+type = "snippet"
+[items.payload]
+snippet = "{{date}}"
+
+[datetime]
+date_format = "%Y-%m-%d"
+time_format = ""
+datetime_format = "literal"
+unknown_setting = "value"
+)");
+
+  const VariableSettings defaults;
+  const auto result = LoadConfigFromRoot(root);
+  ASSERT_TRUE(result.ok);
+  ASSERT_CONTAINS(result.message, "Ignoring datetime.date_format");
+  ASSERT_CONTAINS(result.message, "strftime");
+  ASSERT_CONTAINS(result.message, "Ignoring datetime.time_format");
+  ASSERT_CONTAINS(result.message, "Ignoring datetime.datetime_format");
+  ASSERT_CONTAINS(result.message, "no date or time fields");
+  ASSERT_CONTAINS(result.message, "Ignoring unknown datetime setting");
+  ASSERT_EQ(defaults.dateFormat, result.variableSettings.dateFormat);
+  ASSERT_EQ(defaults.timeFormat, result.variableSettings.timeFormat);
+  ASSERT_EQ(defaults.dateTimeFormat, result.variableSettings.dateTimeFormat);
+
+  fs::remove_all(root);
+}
+
+TEST(ConfigTest, NonStringDateTimeFormatWarnsAndKeepsDefault) {
+  const fs::path root =
+      fs::temp_directory_path() / "surfpanel_datetime_type_root";
+  fs::remove_all(root);
+
+  WriteTomlFile(root, "items.toml",
+                R"([[items]]
+name = "Date"
+type = "snippet"
+[items.payload]
+snippet = "{{date}}"
+
+[datetime]
+date_format = 2026
+)");
+
+  const VariableSettings defaults;
+  const auto result = LoadConfigFromRoot(root);
+  ASSERT_TRUE(result.ok);
+  ASSERT_CONTAINS(result.message, "value must be a string");
+  ASSERT_EQ(defaults.dateFormat, result.variableSettings.dateFormat);
+
+  fs::remove_all(root);
+}
+
+TEST(ConfigTest, SuspectDateTimeFormatWarnsButIsUsed) {
+  const fs::path root =
+      fs::temp_directory_path() / "surfpanel_datetime_suspect_root";
+  fs::remove_all(root);
+
+  WriteTomlFile(root, "items.toml",
+                R"([[items]]
+name = "Date"
+type = "snippet"
+[items.payload]
+snippet = "{{date}}"
+
+[datetime]
+date_format = "yyyy-mm-dd"
+)");
+
+  const auto result = LoadConfigFromRoot(root);
+  ASSERT_TRUE(result.ok);
+  ASSERT_CONTAINS(result.message, "lowercase 'm' means minutes");
+  ASSERT_EQ(QString("yyyy-mm-dd"), result.variableSettings.dateFormat);
+
+  fs::remove_all(root);
+}
+
+TEST(ConfigTest, FallbackKeepsCachedDateTimeFormats) {
+  const fs::path root =
+      fs::temp_directory_path() / "surfpanel_datetime_fallback_root";
+  fs::remove_all(root);
+
+  WriteTomlFile(root, "items.toml",
+                R"([[items]]
+name = "Date"
+type = "snippet"
+[items.payload]
+snippet = "{{date}}"
+
+[datetime]
+date_format = "yyyy-MM-dd"
+)");
+
+  const auto cached = LoadConfigFromRoot(root);
+  ASSERT_TRUE(cached.ok);
+
+  WriteTomlFile(root, "items.toml", "[[items]\n");
+
+  const auto result = LoadConfigWithFallback(root);
+  ASSERT_TRUE(result.ok);
+  ASSERT_TRUE(result.usedFallback);
+  ASSERT_TRUE(result.variableSettings.dateFormat == QString("yyyy-MM-dd"));
+
+  fs::remove_all(root);
+}
+
 int main() { return RUN_ALL_TESTS(); }

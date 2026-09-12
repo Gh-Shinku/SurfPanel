@@ -163,6 +163,14 @@ bool ActionManager::hasAction(const std::string &name) const {
   return actions_.find(name) != actions_.end();
 }
 
+void ActionManager::setVariableSettings(const VariableSettings &settings) {
+  variableSettings_ = settings;
+}
+
+const VariableSettings &ActionManager::variableSettings() const {
+  return variableSettings_;
+}
+
 bool ActionManager::invoke(const std::string &name,
                            const QString &payload) const {
   static DefaultActionContext defaultContext;
@@ -176,7 +184,9 @@ bool ActionManager::invoke(const std::string &name, const QString &payload,
     return false;
   }
 
-  return iter->second->invoke(ResolveVariables(payload), context);
+  const auto now = QDateTime::currentDateTime();
+  return iter->second->invoke(ResolveVariables(payload, now, variableSettings_),
+                              context);
 }
 
 void RegisterDefaultActions(ActionManager *manager) {

@@ -178,6 +178,37 @@ URL 和片段负载可以包含实时变量。SurfPanel 在激活项目时根据
 - `{{time}}`：当前时间 `HH:mm:ss`
 - `{{datetime}}`：当前日期和时间 `yyyy/MM/dd HH:mm:ss`
 
+在名称后加冒号，可只对当前这处使用自定义格式：
+
+```toml
+[items.payload]
+snippet = "{{date:yyyy-MM-dd}}"        # 2026-05-17
+snippet = "{{date:yyyy年M月d日 dddd}}"  # 2026年5月17日 星期日
+snippet = "{{datetime:yyyy-MM-dd'T'HH:mm}}"
+```
+
+格式串取第一个冒号之后的全部内容，所以时间字段不受影响：`{{time:HH:mm}}`。
+不带格式的变量使用下面配置的默认值。
+
+若想修改所有项目的默认格式，在 `items.toml` 中加入 `[datetime]` 表，
+并通过托盘菜单的 Reload Config 重新加载：
+
+```toml
+[datetime]
+date_format = "yyyy-MM-dd"
+time_format = "HH:mm"
+datetime_format = "yyyy-MM-dd HH:mm:ss"
+```
+
+格式使用 Qt 的日期时间语法，而不是 `strftime`：`yyyy` 年、`MM` 月、`dd` 日、
+`HH` 时、`mm` 分、`ss` 秒、`dddd` 星期名、`MMM`/`MMMM` 月名。需要原样输出的
+字母用单引号包裹，例如 `yyyy-MM-dd'T'HH:mm`。星期名和月名跟随系统语言，
+数字字段与语言无关。
+
+常见错误会在加载配置时给出警告，并回退到默认格式：`%Y` 这类 `strftime`
+占位符、不含任何日期时间字段的格式串、空值。像 `yyyy-mm-dd` 这样的格式会被
+接受但给出警告，因为小写 `m` 表示分钟。
+
 未知变量保持不变。
 
 ### 回退行为

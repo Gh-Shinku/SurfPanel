@@ -69,3 +69,10 @@ type = "snippet"
 keywords = ["test"]
 [items.payload]
 snippet = "test"
+
+# Optional defaults for {{date}}, {{time}} and {{datetime}}. Inline overrides
+# such as {{date:yyyy-MM-dd}} keep working regardless of this table.
+# [datetime]
+# date_format = "yyyy-MM-dd"
+# time_format = "HH:mm"
+# datetime_format = "yyyy-MM-dd HH:mm:ss"

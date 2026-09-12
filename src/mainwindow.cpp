@@ -578,6 +578,7 @@ ConfigLoadResult MainWindow::loadBackendItems() {
   items_ = result.items;
   searchEngine_.setItems(result.items);
   searchEngine_.setSearchPrefixes(result.searchPrefixes);
+  actionManager_.setVariableSettings(result.variableSettings);
   onQueryTextChanged(input_->text());
 
   if (!result.ok || result.usedFallback) {

@@ -1,6 +1,7 @@
 #ifndef SURFPANEL_ACTION_MANAGER_H
 #define SURFPANEL_ACTION_MANAGER_H
 
+#include "variable_resolver.h"
 #include <QUrl>
 #include <memory>
 #include <string>
@@ -63,8 +64,12 @@ public:
   bool invoke(const std::string &name, const QString &payload,
               ActionContext &context) const;
 
+  void setVariableSettings(const VariableSettings &settings);
+  const VariableSettings &variableSettings() const;
+
 private:
   std::unordered_map<std::string, std::unique_ptr<Action>> actions_;
+  VariableSettings variableSettings_;
 };
 
 void RegisterDefaultActions(ActionManager *manager);

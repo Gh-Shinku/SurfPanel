@@ -2,6 +2,7 @@
 #define SURFPANEL_CONFIG_H
 
 #include "item.h"
+#include "variable_resolver.h"
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -10,6 +11,7 @@
 struct ConfigLoadResult {
   std::vector<StringItem> items;
   std::vector<SearchPrefixRule> searchPrefixes;
+  VariableSettings variableSettings;
   std::filesystem::path configRoot;
   bool usedFallback = false;
   bool ok = true;
