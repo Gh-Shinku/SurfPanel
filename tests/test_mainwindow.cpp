@@ -137,6 +137,35 @@ TEST(MainWindowTest, ResultCountControlsHeightAndEmptyState) {
   ASSERT_EQ(172, window.height());
 }
 
+TEST(MainWindowTest, VisibleSearchTransitionsShrinkEmptyState) {
+  for (bool native : {true, false}) {
+    ResetRecentCache();
+    MainWindow window(nullptr, false, native);
+    window.setItems(MakeRankedItems(6));
+    auto *input = window.findChild<QLineEdit *>("searchInput");
+    auto *label = window.findChild<QLabel *>("emptyState");
+    window.show();
+    for (const QString query :
+         {QString("git"), QString("missing"), QString("git"), QString("")}) {
+      input->setText(query);
+      QCoreApplication::processEvents();
+      ASSERT_EQ(query == "git" ? 348 : 128, window.height());
+      ASSERT_EQ(12, input->mapTo(&window, QPoint()).y());
+      if (query != "git") {
+        ASSERT_EQ(44, label->height());
+        ASSERT_TRUE(label->isVisible());
+      }
+    }
+    window.hide();
+    input->setText("git");
+    QCoreApplication::processEvents();
+    input->clear();
+    window.show();
+    QCoreApplication::processEvents();
+    ASSERT_EQ(128, window.height());
+  }
+}
+
 TEST(MainWindowTest, PaletteGeometryHandlesNegativeAndSmallScreens) {
   const QRect available(-1920, -200, 1920, 1080);
   const auto one = PaletteGeometry(available, 1);
@@ -193,8 +222,9 @@ TEST(MainWindowTest, OptionalVisualCapture) {
       items[2].keywords = {"git"};
       window.setItems(items);
       auto *input = window.findChild<QLineEdit *>("searchInput");
-      for (const QString query : {QString(""), QString("missing"),
-                                  QString("Git Tool 1"), QString("git")}) {
+      for (const QString query :
+           {QString("git"), QString("missing"), QString("git"), QString(""),
+            QString("Git Tool 1")}) {
         input->setText(query);
         for (auto *action : window.findChildren<QAction *>()) {
           if (action->text() == "Show Panel") {
@@ -217,7 +247,6 @@ TEST(MainWindowTest, OptionalVisualCapture) {
             screen
                 ->grabWindow(0, rect.x(), rect.y(), rect.width(), rect.height())
                 .save(directory + "/" + name);
-        window.hide();
         ASSERT_TRUE(saved);
       }
     }

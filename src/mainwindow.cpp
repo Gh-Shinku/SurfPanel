@@ -800,6 +800,12 @@ void MainWindow::updatePaletteGeometry() {
   }
   const QRect geometry = PaletteGeometry(available, count);
   resultsSurface_->setFixedHeight(std::max(1, geometry.height() - 84));
+  // Refresh the propagated minimum size before resizing a visible window.
+  // Otherwise the previous result height clamps a shrink until a later layout
+  // pass, leaving unused space around the input and empty-state row.
+  panel_->layout()->activate();
+  centralWidget()->layout()->activate();
+  layout()->activate();
   setGeometry(geometry);
 }
 
