@@ -20,7 +20,6 @@
 #include <QDir>
 #include <QEvent>
 #include <QFile>
-#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QIcon>
 #include <QKeyEvent>
@@ -34,8 +33,6 @@
 #include <QSettings>
 #include <QShortcut>
 #include <QSignalBlocker>
-#include <QStyle>
-#include <QStyleFactory>
 #include <QStyleHints>
 #include <QSystemTrayIcon>
 #include <QTimer>
@@ -475,22 +472,9 @@ void MainWindow::setupTrayIcon() {
   }
 
   trayMenu_ = new QMenu(this);
-  trayMenu_->setObjectName("trayMenu");
-#ifdef Q_OS_WIN
-  // Use the compact classic desktop style only for the tray menu, rather than
-  // the application's modern Windows style or the palette's Fluent theme.
-  if (auto *classicStyle = QStyleFactory::create("windows")) {
-    classicStyle->setParent(trayMenu_);
-    trayMenu_->setStyle(classicStyle);
-    trayMenu_->setPalette(classicStyle->standardPalette());
-  }
-#endif
-  trayMenu_->setFont(QFontDatabase::systemFont(QFontDatabase::GeneralFont));
   showPanelAction_ = trayMenu_->addAction("Show Panel");
-  trayMenu_->setDefaultAction(showPanelAction_);
   showConfigDirAction_ = trayMenu_->addAction("Show Config File Dir");
   reloadConfigAction_ = trayMenu_->addAction("Reload Config");
-  trayMenu_->addSeparator();
   autoStartAction_ = trayMenu_->addAction("Start with Windows");
   autoStartAction_->setCheckable(true);
   trayMenu_->addSeparator();

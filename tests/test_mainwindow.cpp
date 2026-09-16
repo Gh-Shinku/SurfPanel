@@ -16,13 +16,10 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
-#include <QMenu>
 #include <QMetaObject>
 #include <QPropertyAnimation>
 #include <QScreen>
-#include <QStyle>
 #include <QStyleHints>
-#include <QSystemTrayIcon>
 #include <QThread>
 
 #include <filesystem>
@@ -78,35 +75,6 @@ TEST(MainWindowTest, StartsHiddenFramelessAndOnTop) {
   ASSERT_TRUE((window.windowFlags() & Qt::FramelessWindowHint) ||
               window.property("nativeFrame").toBool());
   ASSERT_TRUE(window.windowFlags() & Qt::WindowStaysOnTopHint);
-}
-
-TEST(MainWindowTest, TrayMenuUsesIndependentClassicDesktopStyle) {
-  MainWindow window(nullptr, false);
-  auto *menu = window.findChild<QMenu *>("trayMenu");
-  if (!QSystemTrayIcon::isSystemTrayAvailable()) {
-    ASSERT_EQ(nullptr, menu);
-    return;
-  }
-  ASSERT_NE(nullptr, menu);
-  ASSERT_EQ(QString("Show Panel"), menu->defaultAction()->text());
-  ASSERT_TRUE(menu->actions()[3]->isSeparator());
-  ASSERT_TRUE(menu->actions()[4]->isCheckable());
-#ifdef Q_OS_WIN
-  auto *classicStyle = menu->findChild<QStyle *>();
-  ASSERT_NE(nullptr, classicStyle);
-  ASSERT_EQ(QString("windows"), classicStyle->objectName().toLower());
-  ASSERT_EQ(classicStyle->standardPalette().color(QPalette::Window),
-            menu->palette().color(QPalette::Window));
-#endif
-  const QString directory = qEnvironmentVariable("SURFPANEL_UI_CAPTURE_DIR");
-  if (!directory.isEmpty()) {
-    QDir().mkpath(directory);
-    menu->popup(QGuiApplication::primaryScreen()->availableGeometry().center());
-    QCoreApplication::processEvents();
-    const bool saved = menu->grab().save(directory + "/tray-classic.png");
-    menu->hide();
-    ASSERT_TRUE(saved);
-  }
 }
 
 TEST(MainWindowTest, SearchProportionsAndNativeFrameStayLightweight) {
