@@ -13,6 +13,10 @@
 #include <fstream>
 #include <utility>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 namespace {
 
 class SuffixTransformer final : public TextTransformer {
@@ -242,18 +246,27 @@ TEST(ClipboardFilterTest, BusyClipboardRequestsRetryWithoutWriting) {
   ASSERT_EQ(0, backend.writeCallCount);
 }
 
-TEST(ClipboardFilterTest,
-     IdentityTransformAndFailedWritesLeaveClipboardUntouched) {
+TEST(ClipboardFilterTest, UnchangedTextIsRepublishedOnce) {
   IdentityTextTransformer identity;
   ClipboardProcessor identityProcessor(identity);
   identityProcessor.setConfiguration(EnabledForSumatra());
   FakeClipboardBackend backend;
   backend.readResult = ReadyText("SumatraPDF.exe", "copied text");
 
+  ASSERT_EQ(ClipboardProcessResult::Written,
+            identityProcessor.process(&backend));
+  ASSERT_EQ(QString("copied text"), backend.writtenText);
+  ASSERT_EQ(1, backend.writeCallCount);
+
+  backend.readResult.content.sequenceNumber = backend.writtenSequence;
   ASSERT_EQ(ClipboardProcessResult::Ignored,
             identityProcessor.process(&backend));
-  ASSERT_EQ(0, backend.writeCallCount);
+  ASSERT_EQ(1, backend.writeCallCount);
+}
 
+TEST(ClipboardFilterTest, FailedWritesLeaveClipboardUntouched) {
+  FakeClipboardBackend backend;
+  backend.readResult = ReadyText("SumatraPDF.exe", "copied text");
   SuffixTransformer transformer;
   ClipboardProcessor processor(transformer);
   processor.setConfiguration(EnabledForSumatra());
@@ -374,9 +387,24 @@ TEST(ClipboardFilterTest, NativeListenerTransformsMatchingClipboardUpdates) {
   }
 
   const QString actual = clipboard->text();
+  clipboard->setText("An unchanged single line.");
+  const DWORD originalSequence = GetClipboardSequenceNumber();
+  timer.restart();
+  while (GetClipboardSequenceNumber() == originalSequence &&
+         timer.elapsed() < 1000) {
+    QCoreApplication::processEvents();
+    QThread::msleep(10);
+  }
+  const bool republished = GetClipboardSequenceNumber() != originalSequence;
+  const QString unchangedText = clipboard->text();
+  const bool ownedByHost =
+      GetClipboardOwner() == reinterpret_cast<HWND>(host.nativeWindow);
   manager.shutdown();
   clipboard->setText(previousText);
   ASSERT_EQ(expected, actual);
+  ASSERT_TRUE(republished);
+  ASSERT_TRUE(ownedByHost);
+  ASSERT_EQ(QString("An unchanged single line."), unchangedText);
 }
 #endif
 

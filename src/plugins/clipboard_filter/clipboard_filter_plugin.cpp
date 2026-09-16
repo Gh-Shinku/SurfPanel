@@ -275,10 +275,8 @@ ClipboardProcessResult ClipboardProcessor::process(
   }
 
   const QString transformed = transformer_.transform(read.content.unicodeText);
-  if (transformed == read.content.unicodeText) {
-    return ClipboardProcessResult::Ignored;
-  }
-
+  // Republish even unchanged text under SurfPanel's ownership so clipboard
+  // managers that exclude the source PDF reader can capture every copy.
   quint32 sequenceNumber = 0;
   if (!backend->writeUnicodeText(transformed, &sequenceNumber)) {
     return ClipboardProcessResult::WriteFailed;

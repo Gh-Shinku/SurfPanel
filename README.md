@@ -178,7 +178,9 @@ PDF transformer joins single line breaks while preserving blank-line paragraph
 boundaries, removes English end-of-line hyphenation when the next line starts
 with a lowercase letter, and removes unwanted spacing between CJK and Latin
 text or numbers. A transformed write replaces the clipboard with Unicode text
-only. Configure Ditto separately to exclude `SumatraPDF.exe` if you want Ditto
+only. Matching text is written back once even when normalization leaves it
+unchanged, so single-line copies also reach clipboard history under SurfPanel's
+ownership. Configure Ditto separately to exclude `SumatraPDF.exe` if you want Ditto
 to capture SurfPanel's processed write instead of the original.
 
 For compatibility, an existing `[clipboard_filter]` table in `items.toml` is
