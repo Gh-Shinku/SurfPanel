@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.21.0)
 project(SurfPanel VERSION 0.1.0 LANGUAGES C CXX)
 
+if(WIN32)
+  enable_language(RC)
+endif()
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release")
 endif()
@@ -106,6 +110,12 @@ add_executable(SurfPanel WIN32
   src/resources.qrc
 )
 target_link_libraries(SurfPanel PRIVATE SurfPanel::Ui)
+if(WIN32)
+  target_sources(SurfPanel PRIVATE src/app_icon.rc)
+  target_include_directories(SurfPanel PRIVATE assets)
+  set_property(SOURCE src/app_icon.rc PROPERTY OBJECT_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/SurfPanel.ico")
+endif()
 if(MINGW)
   target_link_options(SurfPanel PRIVATE $<$<CONFIG:Release>:-s>)
 endif()
