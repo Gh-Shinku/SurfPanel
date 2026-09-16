@@ -1,6 +1,5 @@
 #include "fluent_panel.h"
 
-#include <QLinearGradient>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPen>
@@ -41,15 +40,6 @@ void FluentPanel::paintEvent(QPaintEvent *event) {
   painter.setPen(Qt::NoPen);
   painter.setBrush(baseColor_);
   painter.drawPath(path);
-
-  painter.save();
-  painter.setClipPath(path);
-  QLinearGradient gradient(rect.topLeft(), rect.bottomLeft());
-  gradient.setColorAt(0.0, QColor(255, 255, 255, darkMode_ ? 10 : 2));
-  gradient.setColorAt(1.0, QColor(0, 0, 0, darkMode_ ? 18 : 3));
-  painter.setBrush(gradient);
-  painter.drawRect(rect);
-  painter.restore();
 
   painter.setPen(QPen(borderColor_, 1));
   painter.setBrush(Qt::NoBrush);

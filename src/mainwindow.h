@@ -56,10 +56,8 @@ private:
   void hidePanel(bool clearPasteTarget = true);
   void updateTheme();
   void updatePanelBackground();
-  void updateDropShadow();
   bool isSystemDarkMode() const;
   QColor querySystemAccentColor() const;
-  QColor sampleWallpaperDominantColor() const;
   void openConfigDirectory();
   void reloadConfig();
   bool isAutoStartEnabled() const;
@@ -79,7 +77,8 @@ private:
   SearchResultListModel *resultsModel_;
   SearchResultItemDelegate *resultsDelegate_;
   FluentPanel *panel_;
-  QGraphicsDropShadowEffect *panelShadow_;
+  bool nativeFrame_ = false;
+  bool nativeBackdrop_ = false;
   QColor accentColor_;
   bool isDarkMode_;
 

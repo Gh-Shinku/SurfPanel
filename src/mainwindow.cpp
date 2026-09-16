@@ -2,8 +2,10 @@
 
 #include "config.h"
 #include "fluent_panel.h"
+#include "palette_search_input.h"
 #include "plugin/builtin_plugins.h"
 #include "search_result_view.h"
+#include "window_effects.h"
 
 #include <QAbstractItemView>
 #include <QAction>
@@ -14,10 +16,8 @@
 #include <QDir>
 #include <QEvent>
 #include <QFile>
-#include <QGraphicsDropShadowEffect>
 #include <QGuiApplication>
 #include <QIcon>
-#include <QImage>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QListView>
@@ -66,17 +66,6 @@ QString ToHexString(const QColor &color) {
       .arg(color.green(), 2, 16, QLatin1Char('0'))
       .arg(color.blue(), 2, 16, QLatin1Char('0'))
       .toUpper();
-}
-
-QColor BlendColors(const QColor &base, const QColor &tint, double tintRatio) {
-  const double ratio = std::clamp(tintRatio, 0.0, 1.0);
-  const double baseRatio = 1.0 - ratio;
-  const int red = static_cast<int>(base.red() * baseRatio + tint.red() * ratio);
-  const int green =
-      static_cast<int>(base.green() * baseRatio + tint.green() * ratio);
-  const int blue =
-      static_cast<int>(base.blue() * baseRatio + tint.blue() * ratio);
-  return QColor(red, green, blue);
 }
 
 QColor AccentForegroundColor(const QColor &accent) {
@@ -138,12 +127,11 @@ QString NormalizeStartupValue(const QString &value) {
 MainWindow::MainWindow(QWidget *parent, bool enableHotkey)
     : QMainWindow(parent), input_(nullptr), resultsView_(nullptr),
       resultsModel_(nullptr), resultsDelegate_(nullptr), panel_(nullptr),
-      panelShadow_(nullptr), accentColor_(QColor("#005FB8")),
-      isDarkMode_(false), trayIcon_(nullptr), trayMenu_(nullptr),
-      showPanelAction_(nullptr), showConfigDirAction_(nullptr),
-      reloadConfigAction_(nullptr), autoStartAction_(nullptr),
-      exitAction_(nullptr), globalHotkeyRegistered_(false), hotkeyId_(1),
-      fallbackShortcut_(nullptr) {
+      accentColor_(QColor("#005FB8")), isDarkMode_(false), trayIcon_(nullptr),
+      trayMenu_(nullptr), showPanelAction_(nullptr),
+      showConfigDirAction_(nullptr), reloadConfigAction_(nullptr),
+      autoStartAction_(nullptr), exitAction_(nullptr),
+      globalHotkeyRegistered_(false), hotkeyId_(1), fallbackShortcut_(nullptr) {
   RegisterDefaultActions(&actionManager_);
   if (!RegisterBuiltinPlugins(&pluginManager_)) {
     qCritical() << "Failed to register built-in plugins.";
@@ -211,6 +199,18 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
 bool MainWindow::nativeEvent(const QByteArray &eventType, void *message,
                              qintptr *result) {
   MSG *msg = static_cast<MSG *>(message);
+  if (nativeFrame_ && msg && msg->message == WM_NCCALCSIZE && msg->wParam) {
+    if (result) {
+      *result = 0;
+    }
+    return true;
+  }
+  if (nativeFrame_ && msg && msg->message == WM_NCHITTEST) {
+    if (result) {
+      *result = HTCLIENT;
+    }
+    return true;
+  }
 
   if (msg != nullptr && msg->message == WM_HOTKEY &&
       static_cast<int>(msg->wParam) == hotkeyId_) {
@@ -232,9 +232,25 @@ void MainWindow::setupWindow() {
   }
 
   setWindowTitle("SurfPanel");
-  setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
+  nativeFrame_ = SupportsNativeBackdrop();
+  setWindowFlags(Qt::WindowStaysOnTopHint | Qt::Tool |
+                 (nativeFrame_ ? (Qt::CustomizeWindowHint | Qt::WindowTitleHint)
+                               : Qt::FramelessWindowHint));
   setAttribute(Qt::WA_TranslucentBackground, true);
-  resize(720, 360);
+  resize(660, 348);
+#ifdef Q_OS_WIN
+  if (nativeFrame_) {
+    HWND hwnd = reinterpret_cast<HWND>(winId());
+    SetWindowLongPtr(hwnd, GWL_STYLE,
+                     GetWindowLongPtr(hwnd, GWL_STYLE) | WS_CAPTION |
+                         WS_THICKFRAME);
+    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                     SWP_FRAMECHANGED);
+    nativeBackdrop_ = ApplyNativeBackdrop(winId(), isSystemDarkMode());
+  }
+#endif
+  setProperty("nativeBackdrop", nativeBackdrop_);
 }
 
 void MainWindow::setupUi() {
@@ -247,16 +263,13 @@ void MainWindow::setupUi() {
   panel_->setFrameShape(QFrame::NoFrame);
   panel_->setCornerRadius(8);
 
-  panelShadow_ = new QGraphicsDropShadowEffect(panel_);
-  panel_->setGraphicsEffect(panelShadow_);
-
   QVBoxLayout *panelLayout = new QVBoxLayout(panel_);
-  panelLayout->setContentsMargins(14, 14, 14, 14);
-  panelLayout->setSpacing(10);
+  panelLayout->setContentsMargins(12, 12, 12, 20);
+  panelLayout->setSpacing(8);
 
-  input_ = new QLineEdit(panel_);
+  input_ = new PaletteSearchInput(panel_);
   input_->setObjectName("searchInput");
-  input_->setPlaceholderText("Search bookmarks and snippets...");
+  input_->setPlaceholderText("Search actions…");
   input_->setClearButtonEnabled(true);
 
   resultsView_ = new QListView(panel_);
@@ -319,6 +332,9 @@ void MainWindow::applyStylesheet() {
   themed.replace("@text_color", ToHexString(textColor));
   themed.replace("@placeholder_color", ToHexString(placeholderColor));
   themed.replace("@input_border", ToRgbaString(inputBorder));
+  themed.replace("@input_surface",
+                 ToRgbaString(isDarkMode_ ? QColor(255, 255, 255, 12)
+                                          : QColor(255, 255, 255, 170)));
   themed.replace("@selection_bg", ToRgbaString(selectionBg));
   themed.replace("@selection_text", ToHexString(selectionText));
   themed.replace("@scrollbar_handle", ToRgbaString(scrollbarHandle));
@@ -340,7 +356,7 @@ void MainWindow::updateTheme() {
 
   if (needsApply) {
     applyStylesheet();
-    updateDropShadow();
+    static_cast<PaletteSearchInput *>(input_)->setAccentColor(accentColor_);
 
     if (resultsDelegate_ != nullptr) {
       resultsDelegate_->setTheme(isDarkMode_);
@@ -355,33 +371,22 @@ void MainWindow::updateTheme() {
 }
 
 void MainWindow::updatePanelBackground() {
-  if (panel_ == nullptr) {
+  if (!panel_) {
     return;
   }
-
-  const QColor base = isDarkMode_ ? QColor("#202020") : QColor("#FAFAFA");
-  QColor wallpaper = sampleWallpaperDominantColor();
-  if (!wallpaper.isValid()) {
-    wallpaper = base;
+  if (nativeFrame_) {
+    nativeBackdrop_ = ApplyNativeBackdrop(winId(), isDarkMode_);
   }
-
-  const double tintRatio = isDarkMode_ ? 0.15 : 0.02;
-  QColor mica = BlendColors(base, wallpaper, tintRatio);
-  mica.setAlpha(isDarkMode_ ? 242 : 232);
-
-  const QColor border =
-      isDarkMode_ ? QColor(255, 255, 255, 20) : QColor(255, 255, 255, 92);
-  panel_->setThemeColors(mica, border, isDarkMode_);
-}
-
-void MainWindow::updateDropShadow() {
-  if (panelShadow_ == nullptr) {
-    return;
+  setProperty("nativeBackdrop", nativeBackdrop_);
+  if (nativeBackdrop_) {
+    panel_->setThemeColors(Qt::transparent, Qt::transparent, isDarkMode_);
+  } else {
+    QColor base = isDarkMode_ ? QColor("#202020") : QColor("#FAFAFA");
+    base.setAlpha(nativeFrame_ ? 255 : (isDarkMode_ ? 242 : 240));
+    panel_->setThemeColors(
+        base, isDarkMode_ ? QColor(255, 255, 255, 28) : QColor(0, 0, 0, 28),
+        isDarkMode_);
   }
-
-  panelShadow_->setBlurRadius(48.0);
-  panelShadow_->setOffset(0, 8);
-  panelShadow_->setColor(QColor(0, 0, 0, isDarkMode_ ? 102 : 34));
 }
 
 bool MainWindow::isSystemDarkMode() const {
@@ -423,28 +428,6 @@ QColor MainWindow::querySystemAccentColor() const {
   return QColor((color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF);
 #else
   return QColor("#005FB8");
-#endif
-}
-
-QColor MainWindow::sampleWallpaperDominantColor() const {
-#ifdef Q_OS_WIN
-  QSettings settings("HKEY_CURRENT_USER\\Control Panel\\Desktop",
-                     QSettings::NativeFormat);
-  const QString wallpaperPath = settings.value("WallPaper").toString();
-  if (wallpaperPath.isEmpty() || !QFile::exists(wallpaperPath)) {
-    return QColor();
-  }
-
-  QImage wallpaper(wallpaperPath);
-  if (wallpaper.isNull()) {
-    return QColor();
-  }
-
-  const QImage scaled =
-      wallpaper.scaled(1, 1, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-  return QColor::fromRgb(scaled.pixel(0, 0));
-#else
-  return QColor();
 #endif
 }
 

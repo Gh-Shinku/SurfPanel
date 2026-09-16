@@ -19,6 +19,10 @@
 #include <filesystem>
 #include <vector>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace {
@@ -62,8 +66,26 @@ TEST(MainWindowTest, StartsHiddenFramelessAndOnTop) {
   MainWindow window(nullptr, false);
 
   ASSERT_TRUE(!window.isVisible());
-  ASSERT_TRUE(window.windowFlags() & Qt::FramelessWindowHint);
+  ASSERT_TRUE((window.windowFlags() & Qt::FramelessWindowHint) ||
+              window.property("nativeBackdrop").toBool());
   ASSERT_TRUE(window.windowFlags() & Qt::WindowStaysOnTopHint);
+}
+
+TEST(MainWindowTest, SearchProportionsAndNativeFrameStayLightweight) {
+  MainWindow window(nullptr, false);
+  auto *input = window.findChild<QLineEdit *>("searchInput");
+  ASSERT_EQ(44, input->height());
+  ASSERT_EQ(nullptr, window.findChild<QWidget *>("panel")->graphicsEffect());
+#ifdef Q_OS_WIN
+  if (window.property("nativeBackdrop").toBool()) {
+    window.show();
+    QCoreApplication::processEvents();
+    ASSERT_TRUE(!(
+        GetWindowLongPtr(reinterpret_cast<HWND>(window.winId()), GWL_EXSTYLE) &
+        WS_EX_LAYERED));
+    window.hide();
+  }
+#endif
 }
 
 TEST(MainWindowTest, TextChangedQueriesSearchAndAppliesTopK) {
