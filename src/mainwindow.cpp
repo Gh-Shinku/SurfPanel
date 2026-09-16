@@ -2,10 +2,14 @@
 
 #include "config.h"
 #include "fluent_panel.h"
+#include "palette_geometry.h"
 #include "palette_search_input.h"
 #include "plugin/builtin_plugins.h"
 #include "search_result_view.h"
 #include "window_effects.h"
+#include <QCursor>
+#include <QLabel>
+#include <QStackedWidget>
 
 #include <QAbstractItemView>
 #include <QAction>
@@ -124,7 +128,8 @@ QString NormalizeStartupValue(const QString &value) {
 
 } // namespace
 
-MainWindow::MainWindow(QWidget *parent, bool enableHotkey)
+MainWindow::MainWindow(QWidget *parent, bool enableHotkey,
+                       bool preferNativeBackdrop)
     : QMainWindow(parent), input_(nullptr), resultsView_(nullptr),
       resultsModel_(nullptr), resultsDelegate_(nullptr), panel_(nullptr),
       accentColor_(QColor("#005FB8")), isDarkMode_(false), trayIcon_(nullptr),
@@ -132,6 +137,7 @@ MainWindow::MainWindow(QWidget *parent, bool enableHotkey)
       showConfigDirAction_(nullptr), reloadConfigAction_(nullptr),
       autoStartAction_(nullptr), exitAction_(nullptr),
       globalHotkeyRegistered_(false), hotkeyId_(1), fallbackShortcut_(nullptr) {
+  nativeFrame_ = preferNativeBackdrop && SupportsNativeBackdrop();
   RegisterDefaultActions(&actionManager_);
   if (!RegisterBuiltinPlugins(&pluginManager_)) {
     qCritical() << "Failed to register built-in plugins.";
@@ -232,7 +238,6 @@ void MainWindow::setupWindow() {
   }
 
   setWindowTitle("SurfPanel");
-  nativeFrame_ = SupportsNativeBackdrop();
   setWindowFlags(Qt::WindowStaysOnTopHint | Qt::Tool |
                  (nativeFrame_ ? (Qt::CustomizeWindowHint | Qt::WindowTitleHint)
                                : Qt::FramelessWindowHint));
@@ -251,6 +256,7 @@ void MainWindow::setupWindow() {
   }
 #endif
   setProperty("nativeBackdrop", nativeBackdrop_);
+  setProperty("nativeFrame", nativeFrame_);
 }
 
 void MainWindow::setupUi() {
@@ -288,7 +294,15 @@ void MainWindow::setupUi() {
   resultsView_->setItemDelegate(resultsDelegate_);
 
   panelLayout->addWidget(input_);
-  panelLayout->addWidget(resultsView_, 1);
+  resultsSurface_ = new QStackedWidget(panel_);
+  resultsSurface_->addWidget(resultsView_);
+  emptyState_ = new QLabel("Type to search actions", resultsSurface_);
+  emptyState_->setObjectName("emptyState");
+  emptyState_->setAlignment(Qt::AlignCenter);
+  resultsSurface_->addWidget(emptyState_);
+  panelLayout->addWidget(resultsSurface_, 1);
+  connect(resultsModel_, &QAbstractItemModel::modelReset, this,
+          &MainWindow::updatePaletteGeometry);
 
   rootLayout->addWidget(panel_);
   setCentralWidget(root);
@@ -359,7 +373,7 @@ void MainWindow::updateTheme() {
     static_cast<PaletteSearchInput *>(input_)->setAccentColor(accentColor_);
 
     if (resultsDelegate_ != nullptr) {
-      resultsDelegate_->setTheme(isDarkMode_);
+      resultsDelegate_->setTheme(isDarkMode_, accentColor_);
     }
 
     if (resultsView_ != nullptr) {
@@ -709,14 +723,40 @@ void MainWindow::openConfigDirectory() {
 }
 
 void MainWindow::centerOnScreen() {
-  QScreen *screen = QGuiApplication::primaryScreen();
+  QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
+  if (!screen) {
+    screen = QGuiApplication::primaryScreen();
+  }
   if (screen == nullptr) {
     return;
   }
 
-  const QRect available = screen->availableGeometry();
-  const QPoint centered = available.center() - rect().center();
-  move(centered);
+  activeScreenGeometry_ = screen->availableGeometry();
+  updatePaletteGeometry();
+}
+
+void MainWindow::updatePaletteGeometry() {
+  if (!resultsSurface_) {
+    return;
+  }
+  const int count = resultsModel_->rowCount();
+  emptyState_->setText(input_->text().trimmed().isEmpty()
+                           ? "Type to search actions"
+                           : "No results");
+  resultsSurface_->setCurrentWidget(count
+                                        ? static_cast<QWidget *>(resultsView_)
+                                        : static_cast<QWidget *>(emptyState_));
+  QRect available = activeScreenGeometry_;
+  if (!available.isValid()) {
+    QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
+    if (!screen) {
+      screen = QGuiApplication::primaryScreen();
+    }
+    available = screen ? screen->availableGeometry() : QRect(0, 0, 1920, 1080);
+  }
+  const QRect geometry = PaletteGeometry(available, count);
+  resultsSurface_->setFixedHeight(std::max(1, geometry.height() - 84));
+  setGeometry(geometry);
 }
 
 void MainWindow::toggleVisibilityFromHotkey() {

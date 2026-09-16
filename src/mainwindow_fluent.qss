@@ -37,6 +37,9 @@ QListView#resultsList {
   padding: 0;
 }
 
+QStackedWidget { background: transparent; border: 0; }
+QLabel#emptyState { background: transparent; color: @placeholder_color; font-size: 12px; }
+
 QScrollBar:vertical {
   background: transparent;
   width: 8px;

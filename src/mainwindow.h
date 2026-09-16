@@ -17,6 +17,8 @@ class QAction;
 class QGraphicsDropShadowEffect;
 class QLineEdit;
 class QListView;
+class QLabel;
+class QStackedWidget;
 class QMenu;
 class QModelIndex;
 class QShortcut;
@@ -30,7 +32,8 @@ class MainWindow : public QMainWindow {
   Q_OBJECT
 
 public:
-  explicit MainWindow(QWidget *parent = nullptr, bool enableHotkey = true);
+  explicit MainWindow(QWidget *parent = nullptr, bool enableHotkey = true,
+                      bool preferNativeBackdrop = true);
   ~MainWindow() override;
 
   void setItems(const std::vector<StringItem> &items);
@@ -64,6 +67,7 @@ private:
   void setAutoStartEnabled(bool enabled);
   void syncAutoStartAction();
   void centerOnScreen();
+  void updatePaletteGeometry();
   void toggleVisibilityFromHotkey();
   void moveResultSelection(int delta);
   void onQueryTextChanged(const QString &text);
@@ -74,11 +78,14 @@ private:
 
   QLineEdit *input_;
   QListView *resultsView_;
+  QLabel *emptyState_ = nullptr;
+  QStackedWidget *resultsSurface_ = nullptr;
   SearchResultListModel *resultsModel_;
   SearchResultItemDelegate *resultsDelegate_;
   FluentPanel *panel_;
   bool nativeFrame_ = false;
   bool nativeBackdrop_ = false;
+  QRect activeScreenGeometry_;
   QColor accentColor_;
   bool isDarkMode_;
 

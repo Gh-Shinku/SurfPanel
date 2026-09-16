@@ -10,6 +10,7 @@ class SearchResultListModel final : public QAbstractListModel {
 public:
   enum Roles {
     TypeRole = Qt::UserRole + 1,
+    TypeLabelRole,
   };
 
   explicit SearchResultListModel(QObject *parent = nullptr);
@@ -28,7 +29,7 @@ class SearchResultItemDelegate final : public QStyledItemDelegate {
 public:
   explicit SearchResultItemDelegate(QObject *parent = nullptr);
 
-  void setTheme(bool darkMode);
+  void setTheme(bool darkMode, const QColor &accent = QColor("#005FB8"));
   QSize sizeHint(const QStyleOptionViewItem &option,
                  const QModelIndex &) const override;
   void paint(QPainter *painter, const QStyleOptionViewItem &option,
@@ -36,4 +37,5 @@ public:
 
 private:
   bool darkMode_;
+  QColor accentColor_{"#005FB8"};
 };

@@ -1,5 +1,6 @@
 #include "item.h"
 #include "mainwindow.h"
+#include "palette_geometry.h"
 #include "recent_items_store.h"
 #include "search_result_view.h"
 #include "test_harness.h"
@@ -9,11 +10,14 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QCoreApplication>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QKeyEvent>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListView>
 #include <QMetaObject>
+#include <QScreen>
 #include <QThread>
 
 #include <filesystem>
@@ -67,7 +71,7 @@ TEST(MainWindowTest, StartsHiddenFramelessAndOnTop) {
 
   ASSERT_TRUE(!window.isVisible());
   ASSERT_TRUE((window.windowFlags() & Qt::FramelessWindowHint) ||
-              window.property("nativeBackdrop").toBool());
+              window.property("nativeFrame").toBool());
   ASSERT_TRUE(window.windowFlags() & Qt::WindowStaysOnTopHint);
 }
 
@@ -109,6 +113,101 @@ TEST(MainWindowTest, TextChangedQueriesSearchAndAppliesTopK) {
   input->clear();
   QCoreApplication::processEvents();
   ASSERT_EQ(0, list->model()->rowCount());
+}
+
+TEST(MainWindowTest, ResultCountControlsHeightAndEmptyState) {
+  ResetRecentCache();
+  MainWindow window(nullptr, false);
+  window.setItems(MakeRankedItems(1));
+  auto *input = window.findChild<QLineEdit *>("searchInput");
+  auto *label = window.findChild<QLabel *>("emptyState");
+  ASSERT_EQ(128, window.height());
+  ASSERT_EQ(QString("Type to search actions"), label->text());
+  input->setText("missing");
+  ASSERT_EQ(128, window.height());
+  ASSERT_EQ(QString("No results"), label->text());
+  input->setText("git");
+  ASSERT_EQ(128, window.height());
+  window.setItems(MakeRankedItems(6));
+  ASSERT_EQ(348, window.height());
+  ASSERT_EQ(660, window.width());
+  window.setItems(MakeRankedItems(2));
+  ASSERT_EQ(172, window.height());
+}
+
+TEST(MainWindowTest, PaletteGeometryHandlesNegativeAndSmallScreens) {
+  const QRect available(-1920, -200, 1920, 1080);
+  const auto one = PaletteGeometry(available, 1);
+  const auto six = PaletteGeometry(available, 128);
+  ASSERT_EQ(one.y(), six.y());
+  ASSERT_TRUE(available.contains(six));
+  ASSERT_EQ(660, six.width());
+  const QRect small(0, 0, 500, 300);
+  ASSERT_TRUE(small.contains(PaletteGeometry(small, 128)));
+}
+
+TEST(MainWindowTest, ForcedFallbackAndTypeLabelsAreAvailable) {
+  MainWindow window(nullptr, false, false);
+  ASSERT_TRUE(!window.property("nativeBackdrop").toBool());
+  ASSERT_TRUE(window.windowFlags() & Qt::FramelessWindowHint);
+  SearchResultListModel model;
+  auto items = MakeRankedItems(1);
+  model.setResults({&items[0]});
+  ASSERT_EQ(
+      QString("Link"),
+      model.index(0, 0).data(SearchResultListModel::TypeLabelRole).toString());
+  items[0].type = "plugin";
+  ASSERT_EQ(
+      QString("Plugin"),
+      model.index(0, 0).data(SearchResultListModel::TypeLabelRole).toString());
+  items[0].type = "snippet";
+  ASSERT_EQ(
+      QString("Snippet"),
+      model.index(0, 0).data(SearchResultListModel::TypeLabelRole).toString());
+}
+
+TEST(MainWindowTest, OptionalVisualCapture) {
+  const QString directory = qEnvironmentVariable("SURFPANEL_UI_CAPTURE_DIR");
+  if (directory.isEmpty()) {
+    return;
+  }
+  QDir().mkpath(directory);
+  for (bool native : {true, false}) {
+    ResetRecentCache();
+    MainWindow window(nullptr, false, native);
+    auto items = MakeRankedItems(8);
+    items[0].name = "A long example action name that should be elided without "
+                    "overlapping its type label";
+    items[1].type = "plugin";
+    items[1].payload = PluginPayload{"clipboard-filter", "filter"};
+    items[2] = MakeSnippetItem("A text snippet", "Example");
+    items[2].keywords = {"git"};
+    window.setItems(items);
+    auto *input = window.findChild<QLineEdit *>("searchInput");
+    for (const QString query : {QString("missing"), QString("git")}) {
+      input->setText(query);
+      for (auto *action : window.findChildren<QAction *>()) {
+        if (action->text() == "Show Panel") {
+          action->trigger();
+          break;
+        }
+      }
+      QElapsedTimer timer;
+      timer.start();
+      while (timer.elapsed() < 150) {
+        QCoreApplication::processEvents();
+        QThread::msleep(10);
+      }
+      auto *screen = window.screen();
+      const auto rect = window.geometry();
+      const QString name = (native ? "native-" : "fallback-") + query + ".png";
+      const bool saved =
+          screen->grabWindow(0, rect.x(), rect.y(), rect.width(), rect.height())
+              .save(directory + "/" + name);
+      window.hide();
+      ASSERT_TRUE(saved);
+    }
+  }
 }
 
 TEST(MainWindowTest, PrefixQueryShowsScrollableResultWindow) {
