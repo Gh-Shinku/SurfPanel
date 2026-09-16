@@ -39,6 +39,28 @@ Install page and offers to close it automatically before files are replaced.
 After an upgrade, Restart Manager starts the updated daemon again; on a fresh
 install, the Finish page offers to launch it.
 
+## Palette Appearance
+
+On Windows 11 22H2 and later, the palette uses the system Desktop Acrylic
+backdrop, small rounded corners, and DWM framing/shadow. Older Windows versions
+and unavailable native effects use a simple translucent panel and thin border.
+No wallpaper sampling or Qt drop-shadow effect is used.
+
+The palette is 660 logical pixels wide and opens on the screen containing the
+cursor, horizontally centered with its top edge around 35% of the available
+screen height. Height follows the results, displaying up to six 44-pixel rows
+before scrolling; empty results show an informational, non-actionable row.
+Type icons and `Link`, `Snippet`, and `Plugin` labels identify actions.
+
+Light/dark appearance follows Qt's system color scheme, with a compatibility
+fallback for older Qt versions. The Windows accent marks search focus and the
+selected row. A 90 ms, 4-pixel opening animation follows the Windows animation
+setting and never delays keyboard input.
+
+For UI verification, set `SURFPANEL_UI_CAPTURE_DIR` to a build-artifact directory
+and run `test_mainwindow` through CTest. It exports light/dark native and fallback
+previews; normal test runs do not capture the desktop.
+
 ## Configuration
 
 SurfPanel uses a single main TOML file for everyday configuration. Optional

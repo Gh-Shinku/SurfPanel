@@ -32,6 +32,23 @@ Windows Restart Manager 会在“准备安装”页面列出它，并允许在�
 关闭；升级完成后会由 Restart Manager 重新启动守护程序。全新安装则会在完成
 页面提供启动选项。
 
+## Palette 外观
+
+Windows 11 22H2 及以上使用系统 Desktop Acrylic 背景、小圆角及 DWM 边框/阴影。
+旧版 Windows 或原生效果不可用时使用单一半透明填充和细边框，不采样壁纸，
+不使用 Qt drop-shadow。
+
+窗口默认宽 660 个逻辑像素，打开在鼠标所在屏幕，水平居中，顶边约位于可用高度的 35%。
+高度随结果数量调整，最多显示六行 44 px 结果，其余通过滚动查看。
+没有结果时显示不可执行的提示行；图标与 `Link`、`Snippet`、`Plugin` 标签区分功能类型。
+
+深浅主题跟随 Qt 系统 color scheme，旧版 Qt 使用兼容回退。
+Windows accent 仅用于搜索焦点与选中行等小范围提示。
+90 ms、4 px 的打开动画尊重系统动画设置，不延迟键盘操作。
+
+UI 验证可设置 `SURFPANEL_UI_CAPTURE_DIR` 为构建产物目录，再通过 CTest 运行
+`test_mainwindow`，导出深浅主题的原生与 fallback 预览；常规测试不会截图。
+
 ## 配置
 
 SurfPanel 使用单个主 TOML 文件进行日常配置。可选的导入功能可以在需要共享或复用项目组时拉取包文件。

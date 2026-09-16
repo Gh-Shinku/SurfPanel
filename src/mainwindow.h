@@ -14,7 +14,8 @@
 class QByteArray;
 class QEvent;
 class QAction;
-class QGraphicsDropShadowEffect;
+class QPropertyAnimation;
+class QTimer;
 class QLineEdit;
 class QListView;
 class QLabel;
@@ -86,6 +87,9 @@ private:
   bool nativeFrame_ = false;
   bool nativeBackdrop_ = false;
   QRect activeScreenGeometry_;
+  QPropertyAnimation *showAnimation_ = nullptr;
+  QTimer *themeRefreshTimer_ = nullptr;
+  QPoint showTarget_;
   QColor accentColor_;
   bool isDarkMode_;
 

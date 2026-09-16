@@ -28,10 +28,12 @@
 #include <QMenu>
 #include <QPointer>
 #include <QProcess>
+#include <QPropertyAnimation>
 #include <QScreen>
 #include <QSettings>
 #include <QShortcut>
 #include <QSignalBlocker>
+#include <QStyleHints>
 #include <QSystemTrayIcon>
 #include <QTimer>
 #include <QUrl>
@@ -171,6 +173,11 @@ void MainWindow::setItems(const std::vector<StringItem> &items) {
 }
 
 bool MainWindow::event(QEvent *event) {
+  if (themeRefreshTimer_ &&
+      (event->type() == QEvent::ApplicationPaletteChange ||
+       event->type() == QEvent::PaletteChange)) {
+    themeRefreshTimer_->start(0);
+  }
   if (event->type() == QEvent::WindowDeactivate && isVisible()) {
     hidePanel();
   }
@@ -205,6 +212,12 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
 bool MainWindow::nativeEvent(const QByteArray &eventType, void *message,
                              qintptr *result) {
   MSG *msg = static_cast<MSG *>(message);
+  if (msg && themeRefreshTimer_ &&
+      (msg->message == WM_DWMCOLORIZATIONCOLORCHANGED ||
+       msg->message == WM_SETTINGCHANGE || msg->message == WM_THEMECHANGED ||
+       msg->message == WM_DWMCOMPOSITIONCHANGED)) {
+    themeRefreshTimer_->start(0);
+  }
   if (nativeFrame_ && msg && msg->message == WM_NCCALCSIZE && msg->wParam) {
     if (result) {
       *result = 0;
@@ -337,7 +350,7 @@ void MainWindow::applyStylesheet() {
       isDarkMode_ ? QColor(255, 255, 255, 28) : QColor(0, 0, 0, 12);
   const QColor selectionText = AccentForegroundColor(accent);
   QColor selectionBg = accent;
-  selectionBg.setAlpha(isDarkMode_ ? 102 : 77);
+  selectionBg.setAlpha(255);
 
   const QColor scrollbarHandle =
       isDarkMode_ ? QColor(148, 163, 184, 120) : QColor(104, 104, 104, 96);
@@ -364,6 +377,7 @@ void MainWindow::updateTheme() {
   const bool needsApply = themeChanged || styleSheet().isEmpty();
 
   isDarkMode_ = darkMode;
+  setProperty("darkMode", isDarkMode_);
   if (accent.isValid()) {
     accentColor_ = accent;
   }
@@ -404,6 +418,12 @@ void MainWindow::updatePanelBackground() {
 }
 
 bool MainWindow::isSystemDarkMode() const {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+  const auto scheme = QGuiApplication::styleHints()->colorScheme();
+  if (scheme != Qt::ColorScheme::Unknown) {
+    return scheme == Qt::ColorScheme::Dark;
+  }
+#endif
 #ifdef Q_OS_WIN
   QSettings settings(
       "HKEY_CURRENT_"
@@ -411,7 +431,7 @@ bool MainWindow::isSystemDarkMode() const {
       QSettings::NativeFormat);
   return settings.value("AppsUseLightTheme", 1).toInt() == 0;
 #else
-  return false;
+  return palette().color(QPalette::Window).lightness() < 128;
 #endif
 }
 
@@ -495,6 +515,17 @@ void MainWindow::setupTrayIcon() {
 }
 
 void MainWindow::setupConnections() {
+  themeRefreshTimer_ = new QTimer(this);
+  themeRefreshTimer_->setSingleShot(true);
+  connect(themeRefreshTimer_, &QTimer::timeout, this, &MainWindow::updateTheme);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+  connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this,
+          [this](Qt::ColorScheme) { themeRefreshTimer_->start(0); });
+#endif
+  showAnimation_ = new QPropertyAnimation(this, "pos", this);
+  showAnimation_->setObjectName("showAnimation");
+  showAnimation_->setDuration(90);
+  showAnimation_->setEasingCurve(QEasingCurve::OutCubic);
   input_->installEventFilter(this);
   resultsView_->installEventFilter(this);
 
@@ -607,13 +638,18 @@ void MainWindow::showPanel() {
   }
 
   centerOnScreen();
-  setWindowOpacity(1.0);
   onQueryTextChanged(input_->text());
   show();
   raise();
   activateWindow();
   input_->setFocus();
   input_->selectAll();
+  if (SystemAnimationsEnabled()) {
+    showTarget_ = pos();
+    showAnimation_->setStartValue(showTarget_ + QPoint(0, 4));
+    showAnimation_->setEndValue(showTarget_);
+    showAnimation_->start();
+  }
 }
 
 void MainWindow::hidePanel(bool clearPasteTarget) {
@@ -622,7 +658,11 @@ void MainWindow::hidePanel(bool clearPasteTarget) {
   }
 
   hide();
-  setWindowOpacity(1.0);
+  if (showAnimation_ &&
+      showAnimation_->state() == QAbstractAnimation::Running) {
+    showAnimation_->stop();
+    move(showTarget_);
+  }
 
 #ifdef Q_OS_WIN
   if (clearPasteTarget) {
@@ -736,6 +776,10 @@ void MainWindow::centerOnScreen() {
 }
 
 void MainWindow::updatePaletteGeometry() {
+  if (showAnimation_ &&
+      showAnimation_->state() == QAbstractAnimation::Running) {
+    showAnimation_->stop();
+  }
   if (!resultsSurface_) {
     return;
   }

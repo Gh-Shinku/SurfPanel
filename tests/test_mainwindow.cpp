@@ -17,7 +17,9 @@
 #include <QLineEdit>
 #include <QListView>
 #include <QMetaObject>
+#include <QPropertyAnimation>
 #include <QScreen>
+#include <QStyleHints>
 #include <QThread>
 
 #include <filesystem>
@@ -144,6 +146,7 @@ TEST(MainWindowTest, PaletteGeometryHandlesNegativeAndSmallScreens) {
   ASSERT_EQ(660, six.width());
   const QRect small(0, 0, 500, 300);
   ASSERT_TRUE(small.contains(PaletteGeometry(small, 128)));
+  ASSERT_EQ(260, PaletteGeometry(small, 128).height());
 }
 
 TEST(MainWindowTest, ForcedFallbackAndTypeLabelsAreAvailable) {
@@ -172,42 +175,92 @@ TEST(MainWindowTest, OptionalVisualCapture) {
     return;
   }
   QDir().mkpath(directory);
-  for (bool native : {true, false}) {
-    ResetRecentCache();
-    MainWindow window(nullptr, false, native);
-    auto items = MakeRankedItems(8);
-    items[0].name = "A long example action name that should be elided without "
-                    "overlapping its type label";
-    items[1].type = "plugin";
-    items[1].payload = PluginPayload{"clipboard-filter", "filter"};
-    items[2] = MakeSnippetItem("A text snippet", "Example");
-    items[2].keywords = {"git"};
-    window.setItems(items);
-    auto *input = window.findChild<QLineEdit *>("searchInput");
-    for (const QString query : {QString("missing"), QString("git")}) {
-      input->setText(query);
-      for (auto *action : window.findChildren<QAction *>()) {
-        if (action->text() == "Show Panel") {
-          action->trigger();
-          break;
+  for (bool dark : {false, true}) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    QGuiApplication::styleHints()->setColorScheme(
+        dark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
+#endif
+    for (bool native : {true, false}) {
+      ResetRecentCache();
+      MainWindow window(nullptr, false, native);
+      auto items = MakeRankedItems(6);
+      items[0].name = "Git Tool 0 with a long example action name that should "
+                      "be elided without "
+                      "overlapping its type label";
+      items[1].type = "plugin";
+      items[1].payload = PluginPayload{"clipboard-filter", "filter"};
+      items[2] = MakeSnippetItem("Git Tool 2 snippet", "Example");
+      items[2].keywords = {"git"};
+      window.setItems(items);
+      auto *input = window.findChild<QLineEdit *>("searchInput");
+      for (const QString query : {QString(""), QString("missing"),
+                                  QString("Git Tool 1"), QString("git")}) {
+        input->setText(query);
+        for (auto *action : window.findChildren<QAction *>()) {
+          if (action->text() == "Show Panel") {
+            action->trigger();
+            break;
+          }
         }
+        QElapsedTimer timer;
+        timer.start();
+        while (timer.elapsed() < 150) {
+          QCoreApplication::processEvents();
+          QThread::msleep(10);
+        }
+        auto *screen = window.screen();
+        const auto rect = window.geometry();
+        const QString name = QString(dark ? "dark-" : "light-") +
+                             (native ? "native-" : "fallback-") +
+                             (query.isEmpty() ? "home" : query) + ".png";
+        const bool saved =
+            screen
+                ->grabWindow(0, rect.x(), rect.y(), rect.width(), rect.height())
+                .save(directory + "/" + name);
+        window.hide();
+        ASSERT_TRUE(saved);
       }
-      QElapsedTimer timer;
-      timer.start();
-      while (timer.elapsed() < 150) {
-        QCoreApplication::processEvents();
-        QThread::msleep(10);
-      }
-      auto *screen = window.screen();
-      const auto rect = window.geometry();
-      const QString name = (native ? "native-" : "fallback-") + query + ".png";
-      const bool saved =
-          screen->grabWindow(0, rect.x(), rect.y(), rect.width(), rect.height())
-              .save(directory + "/" + name);
-      window.hide();
-      ASSERT_TRUE(saved);
     }
   }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+  QGuiApplication::styleHints()->unsetColorScheme();
+#endif
+}
+
+TEST(MainWindowTest, ThemeAndAnimationChangesPreserveWindowIdentity) {
+  ResetRecentCache();
+  MainWindow window(nullptr, false);
+  const WId original = window.winId();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+  for (const auto scheme : {Qt::ColorScheme::Dark, Qt::ColorScheme::Light}) {
+    QGuiApplication::styleHints()->setColorScheme(scheme);
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < 50) {
+      QCoreApplication::processEvents();
+      QThread::msleep(5);
+    }
+    ASSERT_EQ(scheme == Qt::ColorScheme::Dark,
+              window.property("darkMode").toBool());
+    ASSERT_EQ(original, window.winId());
+  }
+  QGuiApplication::styleHints()->unsetColorScheme();
+#endif
+  window.setItems(MakeRankedItems(8));
+  for (auto *action : window.findChildren<QAction *>()) {
+    if (action->text() == "Show Panel") {
+      action->trigger();
+      break;
+    }
+  }
+  auto *animation = window.findChild<QPropertyAnimation *>("showAnimation");
+  ASSERT_EQ(90, animation->duration());
+  auto *input = window.findChild<QLineEdit *>("searchInput");
+  input->setText("git");
+  ASSERT_EQ(QAbstractAnimation::Stopped, animation->state());
+  ASSERT_EQ(original, window.winId());
+  ASSERT_EQ(qreal(1), window.windowOpacity());
+  window.hide();
 }
 
 TEST(MainWindowTest, PrefixQueryShowsScrollableResultWindow) {

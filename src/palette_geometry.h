@@ -3,7 +3,8 @@
 #include <algorithm>
 
 inline QRect PaletteGeometry(const QRect &available, int resultCount) {
-  const int rows = std::clamp(resultCount, 1, 6);
+  const int maxRows = std::clamp((available.height() - 108) / 44, 1, 6);
+  const int rows = std::clamp(resultCount, 1, maxRows);
   const int width = std::min(660, std::max(1, available.width() - 24));
   const int height =
       std::min(84 + rows * 44, std::max(1, available.height() - 24));

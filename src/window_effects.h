@@ -4,3 +4,4 @@
 
 bool SupportsNativeBackdrop();
 bool ApplyNativeBackdrop(WId window, bool darkMode);
+bool SystemAnimationsEnabled();

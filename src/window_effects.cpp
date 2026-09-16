@@ -58,3 +58,13 @@ bool ApplyNativeBackdrop(WId window, bool darkMode) {
   return false;
 #endif
 }
+
+bool SystemAnimationsEnabled() {
+#ifdef Q_OS_WIN
+  BOOL enabled = TRUE;
+  SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0);
+  return enabled;
+#else
+  return true;
+#endif
+}
