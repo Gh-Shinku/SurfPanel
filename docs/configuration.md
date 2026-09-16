@@ -53,6 +53,22 @@ snippet = "s"
 url = "u"
 ```
 
+### Theme
+
+Set the theme in the main `items.toml` (not an imported package):
+
+```toml
+[appearance]
+theme = "dark"
+```
+
+Values are `"dark"`, `"light"`, or `"system"` (the default). Explicit light/dark
+settings override the system theme for both the palette and tray menu. Saving
+applies changes automatically without restarting or replacing the native window.
+Remove the setting or choose `"system"` to follow system changes again. Invalid
+values produce a configuration warning and follow the system theme. Last-good
+cache fallback preserves the last successfully loaded theme.
+
 ### Packages
 
 To import a shared configuration, drop it under `packages/<name>/` and list

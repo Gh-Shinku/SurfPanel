@@ -733,6 +733,53 @@ date_format = "yyyy-MM-dd"
   fs::remove_all(root);
 }
 
+TEST(ConfigTest, ThemeModesOverrideSystemAndRoundTripThroughFallback) {
+  QTemporaryDir temporary;
+  const fs::path root = fs::u8path(temporary.path().toUtf8().toStdString());
+  for (const auto mode :
+       {ThemeMode::System, ThemeMode::Light, ThemeMode::Dark}) {
+    const char *name = mode == ThemeMode::System  ? "system"
+                       : mode == ThemeMode::Light ? "light"
+                                                  : "dark";
+    WriteTomlFile(root, "items.toml",
+                  std::string("items = []\n[appearance]\ntheme = \"") + name +
+                      "\"\n");
+    const auto result = LoadConfigFromRoot(root);
+    ASSERT_TRUE(result.ok);
+    ASSERT_TRUE(result.themeMode == mode);
+    ASSERT_TRUE(result.message.empty());
+    for (bool systemDark : {false, true}) {
+      ASSERT_EQ(mode == ThemeMode::Dark ||
+                    (mode == ThemeMode::System && systemDark),
+                ResolveDarkTheme(result.themeMode, systemDark));
+    }
+    WriteTomlFile(root, "items.toml", "invalid = [");
+    const auto cached = LoadConfigWithFallback(root);
+    ASSERT_TRUE(cached.usedFallback);
+    ASSERT_TRUE(cached.themeMode == mode);
+  }
+}
+
+TEST(ConfigTest, MissingAndInvalidThemesFollowSystem) {
+  QTemporaryDir temporary;
+  const fs::path root = fs::u8path(temporary.path().toUtf8().toStdString());
+  WriteTomlFile(root, "items.toml", "items = []\n");
+  const auto defaults = LoadConfigFromRoot(root);
+  ASSERT_TRUE(defaults.ok);
+  ASSERT_TRUE(defaults.themeMode == ThemeMode::System);
+  ASSERT_TRUE(defaults.message.empty());
+  for (const std::string appearance :
+       {"appearance = 42", "[appearance]\ntheme = 42",
+        "[appearance]\ntheme = \"unknown\"",
+        "[appearance]\ntheme = \"Dark\""}) {
+    WriteTomlFile(root, "items.toml", "items = []\n" + appearance);
+    const auto invalid = LoadConfigFromRoot(root);
+    ASSERT_TRUE(invalid.ok);
+    ASSERT_TRUE(invalid.themeMode == ThemeMode::System);
+    ASSERT_TRUE(invalid.message.find("appearance.theme") != std::string::npos);
+  }
+}
+
 TEST(ConfigTest, NewUserConfigurationIsEmptyAndExistingFilesArePreserved) {
   QTemporaryDir temporary;
   const fs::path root =

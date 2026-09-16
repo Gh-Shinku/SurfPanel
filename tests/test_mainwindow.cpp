@@ -1,3 +1,5 @@
+#include "app_paths.h"
+#include "atomic_file.h"
 #include "item.h"
 #include "mainwindow.h"
 #include "palette_geometry.h"
@@ -20,8 +22,10 @@
 #include <QMetaObject>
 #include <QPropertyAnimation>
 #include <QScreen>
+#include <QStandardPaths>
 #include <QStyleHints>
 #include <QSystemTrayIcon>
+#include <QTemporaryDir>
 #include <QThread>
 
 #include <filesystem>
@@ -93,7 +97,8 @@ TEST(MainWindowTest, TrayMenuUsesLightDesktopAppearance) {
   for (auto *action : menu->actions()) {
     ASSERT_TRUE(action->text() != "Reload Config");
   }
-  ASSERT_TRUE(menu->styleSheet().contains("#F9F9F9"));
+  ASSERT_TRUE(menu->styleSheet().contains(
+      window.property("darkMode").toBool() ? "#F1F1F1" : "#F9F9F9"));
   ASSERT_TRUE(menu->styleSheet().contains("border-radius: 5px"));
   const QString directory = qEnvironmentVariable("SURFPANEL_UI_CAPTURE_DIR");
   if (!directory.isEmpty()) {
@@ -379,6 +384,69 @@ TEST(MainWindowTest, ThemeAndAnimationChangesPreserveWindowIdentity) {
   window.hide();
 }
 
+TEST(MainWindowTest,
+     ConfiguredThemeHotReloadOverridesSystemWithoutReplacingWindow) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+  struct IsolatedProfile {
+    QString previousName = QCoreApplication::applicationName();
+    QTemporaryDir temporary;
+    fs::path root;
+    IsolatedProfile() {
+      QCoreApplication::setApplicationName("SurfPanel-theme-" +
+                                           QDir(temporary.path()).dirName());
+      root = UserConfigRoot();
+    }
+    ~IsolatedProfile() {
+      std::error_code ec;
+      fs::remove_all(root, ec);
+      QCoreApplication::setApplicationName(previousName);
+      QGuiApplication::styleHints()->unsetColorScheme();
+    }
+  } profile;
+  ASSERT_TRUE(InitializeConfigRoot(profile.root));
+  const auto saveTheme = [&](const char *theme) {
+    ASSERT_TRUE(WriteFileAtomically(
+        profile.root / "items.toml",
+        QByteArray("items = []\n[appearance]\ntheme = \"") + theme + "\"\n"));
+  };
+  const auto waitForTheme = [](MainWindow &window, bool dark) {
+    QElapsedTimer timer;
+    timer.start();
+    while (window.property("darkMode").toBool() != dark &&
+           timer.elapsed() < 3000) {
+      QCoreApplication::processEvents();
+      QThread::msleep(5);
+    }
+    ASSERT_EQ(dark, window.property("darkMode").toBool());
+  };
+  QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
+  saveTheme("light");
+  MainWindow window(nullptr, false);
+  const auto id = window.winId();
+  waitForTheme(window, false);
+  saveTheme("dark");
+  QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+  waitForTheme(window, true);
+  if (auto *menu = window.findChild<QMenu *>("trayMenu")) {
+    ASSERT_TRUE(menu->styleSheet().contains("#F1F1F1"));
+  }
+  QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
+  saveTheme("light");
+  waitForTheme(window, false);
+  QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+  saveTheme("system");
+  QElapsedTimer timer;
+  timer.start();
+  while (timer.elapsed() < 500) {
+    QCoreApplication::processEvents();
+    QThread::msleep(5);
+  }
+  QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
+  waitForTheme(window, true);
+  ASSERT_EQ(id, window.winId());
+#endif
+}
+
 TEST(MainWindowTest, PrefixQueryShowsScrollableResultWindow) {
   ResetRecentCache();
   MainWindow window(nullptr, false);
@@ -628,6 +696,7 @@ TEST(MainWindowTest, ArrowKeysSwitchPresentedItems) {
 
 int main(int argc, char *argv[]) {
   QApplication app(argc, argv);
+  QStandardPaths::setTestModeEnabled(true);
   ResetRecentCache();
   return RUN_ALL_TESTS();
 }

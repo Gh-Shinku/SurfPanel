@@ -45,7 +45,8 @@ screen height. Height follows the results, displaying up to six 44-pixel rows
 before scrolling; empty results show an informational, non-actionable row.
 Type icons and `Link`, `Snippet`, and `Plugin` labels identify actions.
 
-Light/dark appearance follows Qt's system color scheme, with a compatibility
+Light/dark appearance follows `[appearance].theme` when configured; otherwise it
+follows Qt's system color scheme, with a compatibility
 fallback for older Qt versions. The Windows accent marks search focus and the
 selected row. A 90 ms, 4-pixel opening animation follows the Windows animation
 setting and never delays keyboard input.

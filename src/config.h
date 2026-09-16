@@ -8,10 +8,17 @@
 #include <string>
 #include <vector>
 
+enum class ThemeMode { System, Light, Dark };
+
+inline bool ResolveDarkTheme(ThemeMode mode, bool systemDark) {
+  return mode == ThemeMode::Dark || (mode == ThemeMode::System && systemDark);
+}
+
 struct ConfigLoadResult {
   std::vector<StringItem> items;
   std::vector<SearchPrefixRule> searchPrefixes;
   VariableSettings variableSettings;
+  ThemeMode themeMode = ThemeMode::System;
   std::filesystem::path configRoot;
   bool usedFallback = false;
   bool ok = true;

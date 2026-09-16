@@ -40,7 +40,8 @@ Windows 11 22H2 及以上使用系统 Desktop Acrylic 背景、小圆角及 DWM 
 高度随结果数量调整，最多显示六行 44 px 结果，其余通过滚动查看。
 没有结果时显示不可执行的提示行；图标与 `Link`、`Snippet`、`Plugin` 标签区分功能类型。
 
-深浅主题跟随 Qt 系统 color scheme，旧版 Qt 使用兼容回退。
+深浅主题优先使用配置中的 `[appearance].theme`，未指定时跟随 Qt 系统 color scheme，
+旧版 Qt 使用兼容回退。
 Windows accent 仅用于搜索焦点与选中行等小范围提示。
 90 ms、4 px 的打开动画尊重系统动画设置，不延迟键盘操作。
 

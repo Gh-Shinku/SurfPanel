@@ -372,7 +372,7 @@ void MainWindow::applyStylesheet() {
 }
 
 void MainWindow::updateTheme() {
-  const bool darkMode = isSystemDarkMode();
+  const bool darkMode = ResolveDarkTheme(themeMode_, isSystemDarkMode());
   const QColor accent = querySystemAccentColor();
   const bool themeChanged =
       (darkMode != isDarkMode_) || (accent != accentColor_ && accent.isValid());
@@ -385,7 +385,13 @@ void MainWindow::updateTheme() {
   }
 
   if (needsApply) {
+    qInfo() << "Application theme: configured="
+            << (themeMode_ == ThemeMode::Dark    ? "dark"
+                : themeMode_ == ThemeMode::Light ? "light"
+                                                 : "system")
+            << "resolved=" << (isDarkMode_ ? "dark" : "light");
     applyStylesheet();
+    applyTrayMenuTheme();
     static_cast<PaletteSearchInput *>(input_)->setAccentColor(accentColor_);
 
     if (resultsDelegate_ != nullptr) {
@@ -467,20 +473,16 @@ QColor MainWindow::querySystemAccentColor() const {
 #endif
 }
 
-void MainWindow::setupTrayIcon() {
-  if (!QSystemTrayIcon::isSystemTrayAvailable()) {
-    qWarning() << "System tray is unavailable on this platform/session.";
+void MainWindow::applyTrayMenuTheme() {
+  if (!trayMenu_) {
     return;
   }
-
-  trayMenu_ = new QMenu(this);
-  trayMenu_->setObjectName("trayMenu");
-  // Keep the tray menu independent of the translucent palette theme.
-  trayMenu_->setStyleSheet(R"(
+  // Keep the traditional menu layout; only colors follow the resolved theme.
+  trayMenu_->setStyleSheet(QString(R"(
     QMenu {
-      background: #F9F9F9;
-      color: #202020;
-      border: 1px solid #DEDEDE;
+      background: %1;
+      color: %2;
+      border: 1px solid %3;
       border-radius: 5px;
       padding: 4px 0;
       font-family: "Segoe UI";
@@ -491,15 +493,32 @@ void MainWindow::setupTrayIcon() {
       margin: 0 3px;
       border-radius: 3px;
     }
-    QMenu::item:selected { background: #EAEAEA; color: #202020; }
+    QMenu::item:selected { background: %4; color: %2; }
     QMenu::item:default { font-weight: bold; }
-    QMenu::item:disabled { color: #909090; }
+    QMenu::item:disabled { color: %5; }
     QMenu::separator {
       height: 1px;
-      background: #E4E4E4;
+      background: %6;
       margin: 4px 8px;
     }
-  )");
+  )")
+                               .arg(isDarkMode_ ? "#202020" : "#F9F9F9")
+                               .arg(isDarkMode_ ? "#F1F1F1" : "#202020")
+                               .arg(isDarkMode_ ? "#454545" : "#DEDEDE")
+                               .arg(isDarkMode_ ? "#353535" : "#EAEAEA")
+                               .arg(isDarkMode_ ? "#888888" : "#909090")
+                               .arg(isDarkMode_ ? "#3C3C3C" : "#E4E4E4"));
+}
+
+void MainWindow::setupTrayIcon() {
+  if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+    qWarning() << "System tray is unavailable on this platform/session.";
+    return;
+  }
+
+  trayMenu_ = new QMenu(this);
+  trayMenu_->setObjectName("trayMenu");
+  applyTrayMenuTheme();
   showPanelAction_ = trayMenu_->addAction("Show Panel");
   trayMenu_->setDefaultAction(showPanelAction_);
   showConfigDirAction_ = trayMenu_->addAction("Show Config File Dir");
@@ -643,6 +662,8 @@ ConfigLoadResult MainWindow::loadBackendItems() {
   searchEngine_.setItems(result.items);
   searchEngine_.setSearchPrefixes(result.searchPrefixes);
   actionManager_.setVariableSettings(result.variableSettings);
+  themeMode_ = result.themeMode;
+  updateTheme();
   onQueryTextChanged(input_->text());
 
   qInfo() << "Configuration loaded:"

@@ -2,6 +2,7 @@
 #define mainwindow_h
 
 #include "action_manager.h"
+#include "config.h"
 #include "item.h"
 #include "plugin/plugin_manager.h"
 #include "recent_items_store.h"
@@ -54,6 +55,7 @@ private:
   void setupUi();
   void applyStylesheet();
   void setupTrayIcon();
+  void applyTrayMenuTheme();
   void setupConnections();
   void setupHotkeyPlaceholder(bool enableHotkey);
   ConfigLoadResult loadBackendItems();
@@ -94,6 +96,7 @@ private:
   QPoint showTarget_;
   QColor accentColor_;
   bool isDarkMode_;
+  ThemeMode themeMode_ = ThemeMode::System;
 
   QSystemTrayIcon *trayIcon_;
   QMenu *trayMenu_;

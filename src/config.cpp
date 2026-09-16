@@ -29,6 +29,7 @@ struct MainConfig {
   std::vector<fs::path> imports;
   std::vector<SearchPrefixRule> searchPrefixes;
   VariableSettings variableSettings;
+  ThemeMode themeMode = ThemeMode::System;
 };
 
 std::vector<SearchPrefixRule> MakeDefaultSearchPrefixes() {
@@ -397,6 +398,42 @@ void ReadSearchPrefixes(const toml::value &root,
   }
 }
 
+ThemeMode ReadThemeMode(const toml::value &root,
+                        std::vector<std::string> *warnings) {
+  const auto appearance =
+      toml::find_or(root, "appearance", toml::value{toml::table{}});
+  if (appearance.is_table()) {
+    const auto theme =
+        toml::find_or(appearance, "theme", toml::value{"system"});
+    if (theme.is_string()) {
+      if (theme.as_string() == "light") {
+        return ThemeMode::Light;
+      }
+      if (theme.as_string() == "dark") {
+        return ThemeMode::Dark;
+      }
+      if (theme.as_string() == "system") {
+        return ThemeMode::System;
+      }
+    }
+  }
+  warnings->push_back(
+      "appearance.theme must be 'system', 'light', or 'dark' in an appearance "
+      "table; following system theme");
+  return ThemeMode::System;
+}
+
+const char *ThemeModeName(ThemeMode mode) {
+  switch (mode) {
+  case ThemeMode::Light:
+    return "light";
+  case ThemeMode::Dark:
+    return "dark";
+  default:
+    return "system";
+  }
+}
+
 MainConfig ReadMainConfig(const fs::path &mainPath,
                           std::vector<std::string> *warnings) {
   auto root = toml::parse(mainPath, toml::spec::v(1, 1, 0));
@@ -419,6 +456,7 @@ MainConfig ReadMainConfig(const fs::path &mainPath,
 
   ReadDateTimeSettings(root, &config.variableSettings, warnings);
   ReadSearchPrefixes(root, &config.searchPrefixes, warnings);
+  config.themeMode = ReadThemeMode(root, warnings);
 
   return config;
 }
@@ -482,7 +520,8 @@ bool CopyBundledConfig(const fs::path &source, const fs::path &destination) {
 
 bool WriteItemsToToml(const fs::path &path,
                       const std::vector<StringItem> &items,
-                      const VariableSettings &settings, std::string *error) {
+                      const VariableSettings &settings, ThemeMode themeMode,
+                      std::string *error) {
   toml::array itemsArray;
   for (const auto &item : items) {
     toml::table itemTable;
@@ -524,6 +563,7 @@ bool WriteItemsToToml(const fs::path &path,
   datetimeTable["time_format"] = settings.timeFormat.toStdString();
   datetimeTable["datetime_format"] = settings.dateTimeFormat.toStdString();
   root["datetime"] = datetimeTable;
+  root["appearance"] = toml::table{{"theme", ThemeModeName(themeMode)}};
 
   if (!WriteFileAtomically(
           path, QByteArray::fromStdString(toml::format(toml::value(root))))) {
@@ -536,12 +576,13 @@ bool WriteItemsToToml(const fs::path &path,
   return true;
 }
 
-VariableSettings ReadCacheDateTimeSettings(const fs::path &path,
-                                           std::vector<std::string> *warnings) {
+VariableSettings ReadCacheSettings(const fs::path &path, ThemeMode *themeMode,
+                                   std::vector<std::string> *warnings) {
   VariableSettings settings;
   try {
     const auto root = toml::parse(path, toml::spec::v(1, 1, 0));
     ReadDateTimeSettings(root, &settings, warnings);
+    *themeMode = ReadThemeMode(root, warnings);
   } catch (const std::exception &) {
     // Item loading reports the failure; defaults are good enough here.
   }
@@ -567,7 +608,7 @@ ConfigLoadResult TryLoadFallback(const fs::path &configRoot,
       fallback.items = loadStringItems(candidate);
       std::vector<std::string> warnings;
       fallback.variableSettings =
-          ReadCacheDateTimeSettings(candidate, &warnings);
+          ReadCacheSettings(candidate, &fallback.themeMode, &warnings);
       fallback.usedFallback = true;
       fallback.ok = true;
       fallback.message = "Config load failed; using fallback: " +
@@ -656,6 +697,7 @@ ConfigLoadResult LoadConfigFromRoot(const fs::path &configRoot) {
     sourceEntries.emplace_back("items.toml");
     result.searchPrefixes = mainConfig.searchPrefixes;
     result.variableSettings = mainConfig.variableSettings;
+    result.themeMode = mainConfig.themeMode;
   } catch (const toml::syntax_error &err) {
     result.ok = false;
     result.message = "TOML parse error in " + mainPath.string() + ":\n" +
@@ -704,7 +746,7 @@ ConfigLoadResult LoadConfigFromRoot(const fs::path &configRoot) {
 
   std::string cacheError;
   if (!WriteItemsToToml(lastGoodPath, result.items, result.variableSettings,
-                        &cacheError)) {
+                        result.themeMode, &cacheError)) {
     warnings.push_back(cacheError);
   }
 
