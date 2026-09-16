@@ -472,9 +472,37 @@ void MainWindow::setupTrayIcon() {
   }
 
   trayMenu_ = new QMenu(this);
+  trayMenu_->setObjectName("trayMenu");
+  // Keep the tray menu independent of the translucent palette theme.
+  trayMenu_->setStyleSheet(R"(
+    QMenu {
+      background: #F9F9F9;
+      color: #202020;
+      border: 1px solid #DEDEDE;
+      border-radius: 5px;
+      padding: 4px 0;
+      font-family: "Segoe UI";
+      font-size: 14px;
+    }
+    QMenu::item {
+      padding: 5px 24px 5px 24px;
+      margin: 0 3px;
+      border-radius: 3px;
+    }
+    QMenu::item:selected { background: #EAEAEA; color: #202020; }
+    QMenu::item:default { font-weight: bold; }
+    QMenu::item:disabled { color: #909090; }
+    QMenu::separator {
+      height: 1px;
+      background: #E4E4E4;
+      margin: 4px 8px;
+    }
+  )");
   showPanelAction_ = trayMenu_->addAction("Show Panel");
+  trayMenu_->setDefaultAction(showPanelAction_);
   showConfigDirAction_ = trayMenu_->addAction("Show Config File Dir");
   reloadConfigAction_ = trayMenu_->addAction("Reload Config");
+  trayMenu_->addSeparator();
   autoStartAction_ = trayMenu_->addAction("Start with Windows");
   autoStartAction_->setCheckable(true);
   trayMenu_->addSeparator();
