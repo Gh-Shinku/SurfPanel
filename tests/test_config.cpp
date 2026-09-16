@@ -1,6 +1,7 @@
 #include "config.h"
 #include "item.h"
 #include "test_harness.h"
+#include <QTemporaryDir>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -730,6 +731,30 @@ date_format = "yyyy-MM-dd"
   ASSERT_TRUE(result.variableSettings.dateFormat == QString("yyyy-MM-dd"));
 
   fs::remove_all(root);
+}
+
+TEST(ConfigTest, NewUserConfigurationIsEmptyAndExistingFilesArePreserved) {
+  QTemporaryDir temporary;
+  const fs::path root =
+      fs::u8path(temporary.path().toUtf8().toStdString()) / "config";
+  ASSERT_TRUE(InitializeConfigRoot(root));
+  const auto fresh = LoadConfigFromRoot(root);
+  ASSERT_TRUE(fresh.ok);
+  ASSERT_TRUE(fresh.items.empty());
+  ASSERT_TRUE(!fs::exists(root / "packages"));
+  ASSERT_TRUE(!fs::exists(root / "plugins" / "clipboard-filter.toml"));
+  WriteTomlFile(root, "items.toml", "# User config\nitems = []\n");
+  WriteTomlFile(root / "plugins", "clipboard-filter.toml", "enabled = true\n");
+  ASSERT_TRUE(InitializeConfigRoot(root));
+  std::ifstream input(root / "items.toml");
+  std::string firstLine;
+  std::getline(input, firstLine);
+  ASSERT_EQ(std::string("# User config"), firstLine);
+  ASSERT_TRUE(fs::exists(root / "plugins" / "clipboard-filter.toml"));
+  input.close();
+  fs::remove(root / "items.toml");
+  ASSERT_TRUE(InitializeConfigRoot(root));
+  ASSERT_TRUE(!fs::exists(root / "items.toml"));
 }
 
 int main() { return RUN_ALL_TESTS(); }

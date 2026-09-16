@@ -19,6 +19,7 @@ struct ConfigLoadResult {
 };
 
 std::vector<SearchPrefixRule> DefaultSearchPrefixes();
+bool InitializeConfigRoot(const std::filesystem::path &configRoot);
 std::optional<std::filesystem::path> FindConfigRoot();
 ConfigLoadResult LoadConfigFromRoot(const std::filesystem::path &configRoot);
 ConfigLoadResult

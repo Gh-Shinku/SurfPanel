@@ -60,9 +60,6 @@ Name: "autostart"; Description: "Start SurfPanel with Windows"; Flags: unchecked
 [Dirs]
 Name: "{app}\config"
 
-[InstallDelete]
-Type: filesandordirs; Name: "{app}\config"; Check: ShouldResetExistingConfig
-
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#MyAppName}"; ValueData: "{app}\{#MyAppExeName}"; Flags: uninsdeletevalue; Tasks: autostart
 
@@ -103,7 +100,7 @@ Source: "{#MyBuildDir}\imageformats\qico.dll"; DestDir: "{app}\imageformats"; Fl
 Source: "{#MyBuildDir}\styles\qmodernwindowsstyle.dll"; DestDir: "{app}\styles"; Flags: ignoreversion skipifsourcedoesntexist
 
 ; Ship initial config files with the app
-Source: "{#MyConfigDir}\*"; DestDir: "{app}\config"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "{#MyConfigDir}\items.toml"; DestDir: "{app}\config"; Flags: onlyifdoesntexist uninsneveruninstall
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
@@ -115,162 +112,20 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 
 [Code]
 var
-  PreviousInstallDir: string;
-  PreviousUninstallerPath: string;
-  ConfigBackupDir: string;
-  KeepExistingConfig: Boolean;
   UpgradeInstall: Boolean;
-
-function QueryExistingInstallValue(ValueName: string; var Value: string): Boolean;
-begin
-  Result :=
-    RegQueryStringValue(HKCU, '{#MyAppUninstallKey}', ValueName, Value) or
-    RegQueryStringValue(HKLM, '{#MyAppUninstallKey}', ValueName, Value);
-end;
-
-function ExtractExecutablePath(CommandLine: string): string;
-var
-  EndQuotePos: Integer;
-  SpacePos: Integer;
-begin
-  CommandLine := Trim(CommandLine);
-  Result := CommandLine;
-
-  if CommandLine = '' then
-    exit;
-
-  if Copy(CommandLine, 1, 1) = '"' then begin
-    Delete(CommandLine, 1, 1);
-    EndQuotePos := Pos('"', CommandLine);
-    if EndQuotePos > 0 then
-      Result := Copy(CommandLine, 1, EndQuotePos - 1)
-    else
-      Result := CommandLine;
-  end else begin
-    SpacePos := Pos(' ', CommandLine);
-    if SpacePos > 0 then
-      Result := Copy(CommandLine, 1, SpacePos - 1);
-  end;
-end;
-
-function CopyDirectoryRecursive(SourceDir: string; DestDir: string): Boolean;
-var
-  FindRec: TFindRec;
-  SourcePath: string;
-  DestPath: string;
-begin
-  Result := True;
-
-  if not DirExists(SourceDir) then
-    exit;
-
-  if not ForceDirectories(DestDir) then begin
-    Result := False;
-    exit;
-  end;
-
-  if FindFirst(AddBackslash(SourceDir) + '*', FindRec) then begin
-    try
-      repeat
-        if (FindRec.Name <> '.') and (FindRec.Name <> '..') then begin
-          SourcePath := AddBackslash(SourceDir) + FindRec.Name;
-          DestPath := AddBackslash(DestDir) + FindRec.Name;
-
-          if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then begin
-            if not CopyDirectoryRecursive(SourcePath, DestPath) then
-              Result := False;
-          end else begin
-            if not CopyFile(SourcePath, DestPath, False) then
-              Result := False;
-          end;
-        end;
-      until not FindNext(FindRec);
-    finally
-      FindClose(FindRec);
-    end;
-  end;
-end;
-
-function FindExistingInstallation(): Boolean;
-var
-  UninstallString: string;
-begin
-  Result := False;
-  PreviousInstallDir := '';
-  PreviousUninstallerPath := '';
-
-  if QueryExistingInstallValue('UninstallString', UninstallString) then begin
-    PreviousUninstallerPath := ExtractExecutablePath(UninstallString);
-    Result := PreviousUninstallerPath <> '';
-  end;
-
-  QueryExistingInstallValue('InstallLocation', PreviousInstallDir);
-  if (PreviousInstallDir = '') and (PreviousUninstallerPath <> '') then
-    PreviousInstallDir := ExtractFileDir(PreviousUninstallerPath);
-
-  if (not Result) and FileExists(ExpandConstant('{autopf}\{#MyAppName}\unins000.exe')) then begin
-    PreviousInstallDir := ExpandConstant('{autopf}\{#MyAppName}');
-    PreviousUninstallerPath := AddBackslash(PreviousInstallDir) + 'unins000.exe';
-    Result := True;
-  end;
-end;
 
 function InitializeSetup(): Boolean;
 var
-  PreviousConfigDir: string;
+  UninstallString: string;
 begin
   Result := True;
-  KeepExistingConfig := False;
-  PreviousInstallDir := '';
-  PreviousUninstallerPath := '';
-  ConfigBackupDir := ExpandConstant('{tmp}\{#MyAppName}_config_backup');
-  UpgradeInstall := FindExistingInstallation();
-
-  if not UpgradeInstall then
-    exit;
-
-  if PreviousInstallDir <> '' then
-    PreviousConfigDir := AddBackslash(PreviousInstallDir) + 'config'
-  else
-    PreviousConfigDir := '';
-
-  KeepExistingConfig := False;
-  if (PreviousConfigDir <> '') and DirExists(PreviousConfigDir) then begin
-    KeepExistingConfig :=
-      SuppressibleMsgBox('A previous {#MyAppName} installation was found.' + #13#10#13#10 +
-        'Do you want to keep the existing config directory?',
-        mbConfirmation, MB_YESNO, IDYES) = IDYES;
-
-    if KeepExistingConfig then begin
-      DelTree(ConfigBackupDir, True, True, True);
-      if not CopyDirectoryRecursive(PreviousConfigDir, ConfigBackupDir) then begin
-        SuppressibleMsgBox('Failed to back up the existing config directory.',
-          mbError, MB_OK, IDOK);
-        Result := False;
-        exit;
-      end;
-    end;
-  end;
-
+  UpgradeInstall :=
+    RegQueryStringValue(HKCU, '{#MyAppUninstallKey}', 'UninstallString', UninstallString) or
+    RegQueryStringValue(HKLM, '{#MyAppUninstallKey}', 'UninstallString', UninstallString) or
+    FileExists(ExpandConstant('{autopf}\{#MyAppName}\unins000.exe'));
 end;
 
 function IsFreshInstall(): Boolean;
 begin
   Result := not UpgradeInstall;
-end;
-
-function ShouldResetExistingConfig(): Boolean;
-begin
-  Result := (PreviousInstallDir <> '') and (not KeepExistingConfig);
-end;
-
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  if (CurStep = ssPostInstall) and KeepExistingConfig and DirExists(ConfigBackupDir) then begin
-    if not CopyDirectoryRecursive(ConfigBackupDir, ExpandConstant('{app}\config')) then
-      SuppressibleMsgBox('Failed to restore the existing config directory.',
-        mbError, MB_OK, IDOK);
-
-    DelTree(ConfigBackupDir, True, True, True);
-  end;
 end;

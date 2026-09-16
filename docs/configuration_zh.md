@@ -6,10 +6,11 @@ SurfPanel 使用单个主 TOML 文件进行日常配置。可选的导入功能�
 
 ### 配置文件位置
 
-首次启动时，SurfPanel 会将可执行文件旁的 `config/` 目录（本地调试构建时为
-相对路径下的 `../config/`）复制到用户配置目录。之后仅从该用户副本读取和写入，
-因此应用更新不会覆盖你的配置。实际路径遵循 Qt 为 SurfPanel 提供的用户级
-`AppConfigLocation`。
+新安装的 `items.toml` 为空配置（`items = []`），不包含示例条目、导入或已启用插件。
+更多可选示例见 [examples/](examples/README.md)。
+需要时自行添加下方示例。配置位于 Qt 为 SurfPanel 提供的用户级 `AppConfigLocation` 下。
+应用更新不会覆盖用户配置，安装程序也会直接保留已有的可执行文件旁配置，不再询问是否重置。
+只有用户配置目录尚不存在时，才会迁移可执行文件旁的旧配置。
 
 ### 目录结构
 
@@ -104,9 +105,17 @@ keywords = ["date"]
 snippet = "{{date}}"
 ```
 
-### 重新加载配置
+### 自动热重载与排错日志
 
-使用托盘菜单中的 **Reload Config** 选项重新读取 `config/items.toml` 及其导入，无需重启应用。
+保存配置后自动生效，不再提供手动 Reload 菜单。
+监听范围涵盖用户配置目录中的 TOML 源文件，包括导入和插件配置，使用 250 ms 防抖。
+支持编辑器原子替换保存、新建和删除文件、目录删除后重建；生成的 `cache/` 文件
+和非 TOML 临时文件不会触发重载。
+
+日志记录时间、变更文件路径、监听或读取失败、解析和插件诊断、缓存回退、条目数量
+以及重载耗时；监听器不记录文件内容。日志位于 Qt `AppDataLocation` 下的
+`log/SurfPanel.log`（Windows 通常为 `%APPDATA%\SurfPanel\log\SurfPanel.log`）。
+配置错误时查看诊断、修正并保存即可再次加载；上次成功配置的缓存回退见下文。
 
 ### 可选 PDF 剪贴板过滤器
 
@@ -115,7 +124,7 @@ snippet = "{{date}}"
 不会阻止命令面板或其他插件启动。
 
 Windows 剪贴板过滤器（`clipboard-filter`）默认关闭。若要监听从 SumatraPDF
-复制的文本，请编辑 `config/plugins/clipboard-filter.toml` 并重新加载配置：
+复制的文本，请创建或编辑 `config/plugins/clipboard-filter.toml` 并保存：
 
 ```toml
 enabled = true
@@ -160,7 +169,7 @@ function = "filter"
 空文本或非文本会提示失败。遇到短暂占用时异步重试；期间出现新的复制则取消，
 避免覆盖新内容。配置 reload 或退出会取消未完成任务。只有成功执行才记录最近使用。
 
-默认配置已包含该 item。已有安装会保留用户配置，请手动添加上述示例并 reload。
+新用户配置不包含该 item，已有安装会保留用户配置。需要时手动添加上述示例并保存。
 
 ### 插件架构
 
@@ -191,7 +200,7 @@ snippet = "{{date:yyyy-MM-dd}}"        # 2026-05-17
 不带格式的变量使用下面配置的默认值。
 
 若想修改所有项目的默认格式，在 `items.toml` 中加入 `[datetime]` 表，
-并通过托盘菜单的 Reload Config 重新加载：
+保存后自动生效：
 
 ```toml
 [datetime]

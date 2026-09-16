@@ -469,6 +469,14 @@ bool CopyBundledConfig(const fs::path &source, const fs::path &destination) {
 
   fs::copy(source, destination,
            fs::copy_options::recursive | fs::copy_options::skip_existing, ec);
+  if (ec) {
+    qWarning() << "Failed to migrate configuration:"
+               << QString::fromUtf8(source.u8string().c_str())
+               << QString::fromStdString(ec.message());
+  } else {
+    qInfo() << "Initialized user configuration from existing app configuration:"
+            << QString::fromUtf8(destination.u8string().c_str());
+  }
   return !ec;
 }
 
@@ -588,23 +596,43 @@ std::vector<SearchPrefixRule> DefaultSearchPrefixes() {
   return MakeDefaultSearchPrefixes();
 }
 
+bool InitializeConfigRoot(const fs::path &configRoot) {
+  std::error_code ec;
+  // Preserve existing directories, including a temporarily missing items.toml.
+  if (fs::exists(configRoot, ec)) {
+    return fs::is_directory(configRoot, ec);
+  }
+  fs::create_directories(configRoot / "plugins", ec);
+  if (ec) {
+    qWarning() << "Failed to create user configuration directory:"
+               << QString::fromUtf8(configRoot.u8string().c_str());
+    return false;
+  }
+  if (!WriteFileAtomically(configRoot / "items.toml",
+                           QByteArray("items = []\n"))) {
+    qWarning() << "Failed to initialize empty user configuration";
+    return false;
+  }
+  qInfo() << "Initialized empty user configuration:"
+          << QString::fromUtf8(configRoot.u8string().c_str());
+  return true;
+}
+
 std::optional<fs::path> FindConfigRoot() {
   const fs::path userConfig = UserConfigRoot();
   std::error_code ec;
-  if (fs::exists(userConfig / "items.toml", ec)) {
-    return userConfig;
+  // Migrate legacy executable-adjacent configuration on first user launch.
+  // New installations ship only an empty items.toml; existing user directories
+  // are never copied into, reseeded, or overwritten.
+  if (!fs::exists(userConfig, ec)) {
+    if (const auto bundled = FindBundledConfigRoot()) {
+      return CopyBundledConfig(*bundled, userConfig)
+                 ? std::optional<fs::path>(userConfig)
+                 : std::nullopt;
+    }
   }
-
-  const auto bundledConfig = FindBundledConfigRoot();
-  if (!bundledConfig.has_value() ||
-      !CopyBundledConfig(*bundledConfig, userConfig)) {
-    return std::nullopt;
-  }
-
-  if (fs::exists(userConfig / "items.toml", ec)) {
-    return userConfig;
-  }
-  return std::nullopt;
+  return InitializeConfigRoot(userConfig) ? std::optional<fs::path>(userConfig)
+                                          : std::nullopt;
 }
 
 ConfigLoadResult LoadConfigFromRoot(const fs::path &configRoot) {

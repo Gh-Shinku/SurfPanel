@@ -7,11 +7,14 @@ imports can pull in package files when you want to share or reuse item groups.
 
 ### Config Location
 
-On first launch, SurfPanel copies the default `config/` next to the executable
-(or `../config/` for local debug builds) into its user configuration directory.
-It subsequently reads and writes only that user copy, so application updates do
-not overwrite your configuration. The exact location follows Qt's per-user
-`AppConfigLocation` for SurfPanel.
+New installations start with an empty `items.toml` (`items = []`), without
+example actions, imports, or enabled plugins. Add the examples below yourself.
+More optional examples are under [examples/](examples/README.md).
+SurfPanel reads and writes its user configuration directory under Qt's per-user
+`AppConfigLocation` for SurfPanel. Application updates never overwrite this
+directory, and the installer keeps existing executable-adjacent configuration
+without a reset prompt. Legacy executable-adjacent configuration is copied into
+the user directory only when that user directory does not yet exist.
 
 ### Directory Layout
 
@@ -113,10 +116,20 @@ keywords = ["date"]
 snippet = "{{date}}"
 ```
 
-### Reloading Config
+### Automatic Hot Reload and Diagnostics
 
-Use the tray menu option **Reload Config** to re-read `config/items.toml` and
-its imports without restarting the app.
+Saving configuration reloads it automatically; no manual reload menu is needed.
+SurfPanel watches source TOML files throughout the user configuration directory,
+including imports and plugin files. Changes are debounced for 250 ms, and atomic
+editor saves, new files, removals, and recreated directories remain monitored.
+Generated `cache/` files and non-TOML temporary files do not trigger reloads.
+
+Logs include timestamps, changed source paths, watch/read failures, parsing and
+plugin diagnostics, fallback usage, item counts, and reload duration; no file
+contents are logged by the watcher. Logs are written under Qt's `AppDataLocation`
+as `log/SurfPanel.log` (normally `%APPDATA%\SurfPanel\log\SurfPanel.log` on Windows).
+If configuration is invalid, inspect the diagnostics and correct the file;
+saving again reloads it. The last-good cache fallback is described below.
 
 ### Optional PDF Clipboard Filter
 
@@ -127,7 +140,7 @@ plugins from starting.
 
 The Windows clipboard filter (`clipboard-filter`) is disabled by default. To
 monitor text copied from SumatraPDF, edit
-`config/plugins/clipboard-filter.toml` and reload config:
+`config/plugins/clipboard-filter.toml` (create it if missing) and save:
 
 ```toml
 enabled = true
@@ -182,8 +195,8 @@ notification. Brief clipboard contention is retried asynchronously; if another
 copy replaces the content, the operation is cancelled rather than overwriting
 the new copy. Reloading config or shutting down cancels pending work.
 
-The bundled configuration includes this item. Existing installations retain
-their user configuration; add the example manually and reload config. Failed
+New installations do not include this item. Existing installations retain
+their user configuration; add the example manually and save. Failed
 calls show a tray notification and are not added to recently used items.
 
 ### Plugin Architecture
@@ -218,7 +231,7 @@ The pattern is everything after the first colon, so time fields are fine:
 `{{time:HH:mm}}`. Bare variables keep the configured defaults below.
 
 To change the defaults for every item, add a `[datetime]` table to
-`items.toml` and reload the config from the tray menu:
+`items.toml` and save:
 
 ```toml
 [datetime]
