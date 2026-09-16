@@ -282,6 +282,64 @@ TEST(MainWindowTest, OptionalVisualCapture) {
 #endif
 }
 
+TEST(MainWindowTest, OptionalReadmeVisualCapture) {
+  const QString directory = qEnvironmentVariable("SURFPANEL_UI_CAPTURE_DIR");
+  if (directory.isEmpty()) {
+    return;
+  }
+  QDir().mkpath(directory);
+  for (bool dark : {false, true}) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    QGuiApplication::styleHints()->setColorScheme(
+        dark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
+#endif
+    ResetRecentCache();
+    // Widget capture works without a capturable desktop session. Native DWM
+    // Acrylic is not included by grab(), so export the supported fallback.
+    MainWindow window(nullptr, false, false);
+    auto items = MakeRankedItems(2);
+    items[0].name = "GitHub";
+    items[0].payload = UrlPayload{"https://github.com"};
+    items[1].name = "Qt Documentation";
+    items[1].payload = UrlPayload{"https://doc.qt.io"};
+    StringItem filter;
+    filter.name = "Filter Clipboard";
+    filter.type = "plugin";
+    filter.payload = PluginPayload{"clipboard-filter", "filter"};
+    items.push_back(filter);
+    items.push_back(MakeSnippetItem("Today's Date", "{{date}}"));
+    items.push_back(MakeSnippetItem("Current Time", "{{time}}"));
+    items.push_back(MakeSnippetItem("Meeting Notes", "Notes: "));
+    std::vector<RecentItemKey> recent;
+    for (const auto &item : items) {
+      recent.push_back(RecentKeyForItem(item));
+    }
+    WriteRecentCache(recent);
+    window.setItems(items);
+    for (auto *action : window.findChildren<QAction *>()) {
+      if (action->text() == "Show Panel") {
+        action->trigger();
+        break;
+      }
+    }
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < 150) {
+      QCoreApplication::processEvents();
+      QThread::msleep(10);
+    }
+    ASSERT_TRUE(window.isVisible());
+    const bool saved = window.grab().save(
+        directory + (dark ? "/readme-dark.png" : "/readme-light.png"));
+    window.hide();
+    ResetRecentCache();
+    ASSERT_TRUE(saved);
+  }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+  QGuiApplication::styleHints()->unsetColorScheme();
+#endif
+}
+
 TEST(MainWindowTest, ThemeAndAnimationChangesPreserveWindowIdentity) {
   ResetRecentCache();
   MainWindow window(nullptr, false);
