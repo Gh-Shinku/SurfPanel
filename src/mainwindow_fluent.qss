@@ -25,10 +25,6 @@ QLineEdit#searchInput:focus {
   border: 1px solid @input_border;
 }
 
-QLineEdit#searchInput::placeholder {
-  color: @placeholder_color;
-}
-
 QListView#resultsList {
   background: transparent;
   outline: none;

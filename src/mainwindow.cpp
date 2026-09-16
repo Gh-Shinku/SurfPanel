@@ -5,6 +5,7 @@
 #include "fluent_panel.h"
 #include "palette_geometry.h"
 #include "palette_search_input.h"
+#include "palette_theme.h"
 #include "plugin/builtin_plugins.h"
 #include "search_result_view.h"
 #include "tray_menu.h"
@@ -78,10 +79,9 @@ QString ToHexString(const QColor &color) {
 }
 
 QColor AccentForegroundColor(const QColor &accent) {
-  const double luminance = (0.2126 * accent.red() + 0.7152 * accent.green() +
-                            0.0722 * accent.blue()) /
-                           255.0;
-  return luminance > 0.6 ? QColor(10, 10, 10) : QColor(248, 250, 252);
+  return PaletteContrast(Qt::black, accent) > PaletteContrast(Qt::white, accent)
+             ? QColor(Qt::black)
+             : QColor(Qt::white);
 }
 
 std::optional<QString> FindStylesheetPath() {
@@ -346,11 +346,7 @@ void MainWindow::applyStylesheet() {
 
   const QColor accent =
       accentColor_.isValid() ? accentColor_ : QColor("#005FB8");
-  const QColor textColor = isDarkMode_ ? QColor("#F1F5F9") : QColor("#1F1F1F");
-  const QColor placeholderColor =
-      isDarkMode_ ? QColor("#94A3B8") : QColor("#6B6B6B");
-  const QColor inputBorder =
-      isDarkMode_ ? QColor(255, 255, 255, 28) : QColor(0, 0, 0, 12);
+  const auto colors = ColorsForPalette(isDarkMode_);
   const QColor selectionText = AccentForegroundColor(accent);
   QColor selectionBg = accent;
   selectionBg.setAlpha(255);
@@ -359,12 +355,10 @@ void MainWindow::applyStylesheet() {
       isDarkMode_ ? QColor(148, 163, 184, 120) : QColor(104, 104, 104, 96);
 
   QString themed = styleSource;
-  themed.replace("@text_color", ToHexString(textColor));
-  themed.replace("@placeholder_color", ToHexString(placeholderColor));
-  themed.replace("@input_border", ToRgbaString(inputBorder));
-  themed.replace("@input_surface",
-                 ToRgbaString(isDarkMode_ ? QColor(255, 255, 255, 12)
-                                          : QColor(255, 255, 255, 170)));
+  themed.replace("@text_color", ToHexString(colors.text));
+  themed.replace("@placeholder_color", ToHexString(colors.secondary));
+  themed.replace("@input_border", ToRgbaString(colors.inputBorder));
+  themed.replace("@input_surface", ToRgbaString(colors.inputSurface));
   themed.replace("@selection_bg", ToRgbaString(selectionBg));
   themed.replace("@selection_text", ToHexString(selectionText));
   themed.replace("@scrollbar_handle", ToRgbaString(scrollbarHandle));
@@ -374,7 +368,8 @@ void MainWindow::applyStylesheet() {
 
 void MainWindow::updateTheme() {
   const bool darkMode = ResolveDarkTheme(themeMode_, isSystemDarkMode());
-  const QColor accent = querySystemAccentColor();
+  const QColor accent =
+      ReadablePaletteAccent(querySystemAccentColor(), darkMode);
   const bool themeChanged =
       (darkMode != isDarkMode_) || (accent != accentColor_ && accent.isValid());
   const bool needsApply = themeChanged || styleSheet().isEmpty();
@@ -394,6 +389,9 @@ void MainWindow::updateTheme() {
     applyStylesheet();
     applyTrayMenuTheme();
     static_cast<PaletteSearchInput *>(input_)->setAccentColor(accentColor_);
+    const auto colors = ColorsForPalette(isDarkMode_);
+    static_cast<PaletteSearchInput *>(input_)->setThemeColors(colors.text,
+                                                              colors.secondary);
 
     if (resultsDelegate_ != nullptr) {
       resultsDelegate_->setTheme(isDarkMode_, accentColor_);
@@ -416,7 +414,8 @@ void MainWindow::updatePanelBackground() {
   }
   setProperty("nativeBackdrop", nativeBackdrop_);
   if (nativeBackdrop_) {
-    panel_->setThemeColors(Qt::transparent, Qt::transparent, isDarkMode_);
+    panel_->setThemeColors(ColorsForPalette(isDarkMode_).nativeTint,
+                           Qt::transparent, isDarkMode_);
   } else {
     QColor base = isDarkMode_ ? QColor("#202020") : QColor("#FAFAFA");
     base.setAlpha(nativeFrame_ ? 255 : (isDarkMode_ ? 242 : 240));

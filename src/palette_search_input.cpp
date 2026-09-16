@@ -13,6 +13,17 @@ void PaletteSearchInput::setAccentColor(const QColor &color) {
   accentColor_ = color;
   update();
 }
+void PaletteSearchInput::setThemeColors(const QColor &text,
+                                        const QColor &placeholder) {
+  QPalette colors = palette();
+  colors.setColor(QPalette::Text, text);
+  colors.setColor(QPalette::WindowText, text);
+  colors.setColor(QPalette::ButtonText, text);
+  colors.setColor(QPalette::PlaceholderText, placeholder);
+  if (colors != palette()) {
+    setPalette(colors);
+  }
+}
 void PaletteSearchInput::paintEvent(QPaintEvent *event) {
   QLineEdit::paintEvent(event);
   QPainter painter(this);

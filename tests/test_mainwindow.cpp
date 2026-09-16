@@ -1,8 +1,10 @@
 #include "app_paths.h"
 #include "atomic_file.h"
+#include "fluent_panel.h"
 #include "item.h"
 #include "mainwindow.h"
 #include "palette_geometry.h"
+#include "palette_theme.h"
 #include "recent_items_store.h"
 #include "search_result_view.h"
 #include "test_harness.h"
@@ -22,6 +24,7 @@
 #include <QListView>
 #include <QMenu>
 #include <QMetaObject>
+#include <QPainter>
 #include <QPropertyAnimation>
 #include <QScreen>
 #include <QSignalBlocker>
@@ -126,6 +129,84 @@ TEST(MainWindowTest, TrayMenuUsesLightDesktopAppearance) {
     ASSERT_TRUE(saved);
     ASSERT_TRUE(checkedSaved);
   }
+}
+
+TEST(MainWindowTest, PaletteContrastSurvivesExtremeBackdrops) {
+  for (bool dark : {false, true}) {
+    const auto colors = ColorsForPalette(dark);
+    ASSERT_TRUE(colors.nativeTint.alpha() > 0 &&
+                colors.nativeTint.alpha() < 255);
+    ASSERT_TRUE(CompositePaletteColor(colors.nativeTint, Qt::white) !=
+                CompositePaletteColor(colors.nativeTint, Qt::black));
+    for (const QColor backdrop :
+         {QColor(Qt::white), QColor(Qt::black), QColor(Qt::red),
+          QColor(Qt::green), QColor(Qt::blue)}) {
+      const QColor base = CompositePaletteColor(colors.nativeTint, backdrop);
+      for (const QColor surface :
+           {base, CompositePaletteColor(colors.selectedRow, base),
+            CompositePaletteColor(colors.hoveredRow, base),
+            CompositePaletteColor(colors.inputSurface, base)}) {
+        ASSERT_TRUE(PaletteContrast(colors.text, surface) >= 4.5);
+        ASSERT_TRUE(PaletteContrast(colors.secondary, surface) >= 4.5);
+        ASSERT_TRUE(PaletteContrast(colors.icon, surface) >= 3.0);
+      }
+      for (const QColor accent :
+           {QColor(Qt::black), QColor(Qt::white), QColor("#005FB8"),
+            QColor("#808080"), QColor(Qt::red), QColor(Qt::green)}) {
+        const auto marker = ReadablePaletteAccent(accent, dark);
+        ASSERT_TRUE(
+            PaletteContrast(marker, CompositePaletteColor(colors.selectedRow,
+                                                          base)) >= 3.0);
+        ASSERT_TRUE(
+            PaletteContrast(marker, CompositePaletteColor(colors.inputSurface,
+                                                          base)) >= 3.0);
+        ASSERT_TRUE(std::max(PaletteContrast(Qt::black, marker),
+                             PaletteContrast(Qt::white, marker)) >= 4.5);
+      }
+    }
+  }
+}
+
+TEST(MainWindowTest, OptionalContrastBackdropCapture) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+  const QString directory = qEnvironmentVariable("SURFPANEL_UI_CAPTURE_DIR");
+  if (directory.isEmpty()) {
+    return;
+  }
+  QDir().mkpath(directory);
+  for (bool dark : {false, true}) {
+    QGuiApplication::styleHints()->setColorScheme(
+        dark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
+    ResetRecentCache();
+    MainWindow window(nullptr, false);
+    auto items = MakeRankedItems(3);
+    items[0].name = "GitHub";
+    items[1].name = "Filter Clipboard";
+    items[1].type = "plugin";
+    items[2].name = "Today's Date";
+    items[2].type = "snippet";
+    window.setItems(items);
+    auto *input = window.findChild<QLineEdit *>("searchInput");
+    input->setText("git");
+    ASSERT_EQ(ColorsForPalette(dark).secondary,
+              input->palette().color(QPalette::PlaceholderText));
+    auto *panel =
+        static_cast<FluentPanel *>(window.findChild<QWidget *>("panel"));
+    // Simulate the worst-case post-DWM backdrop without capturing the desktop.
+    panel->setThemeColors(ColorsForPalette(dark).nativeTint, Qt::transparent,
+                          dark);
+    for (bool white : {false, true}) {
+      QImage preview(window.size(), QImage::Format_ARGB32_Premultiplied);
+      preview.fill(white ? Qt::white : Qt::black);
+      QPainter painter(&preview);
+      window.render(&painter);
+      painter.end();
+      ASSERT_TRUE(preview.save(directory + (dark ? "/dark-on-" : "/light-on-") +
+                               (white ? "white.png" : "black.png")));
+    }
+  }
+  QGuiApplication::styleHints()->unsetColorScheme();
+#endif
 }
 
 TEST(MainWindowTest, CompactTrayCheckmarksRenderInBothThemes) {
@@ -466,6 +547,10 @@ TEST(MainWindowTest,
       QThread::msleep(5);
     }
     ASSERT_EQ(dark, window.property("darkMode").toBool());
+    ASSERT_EQ(ColorsForPalette(dark).secondary,
+              window.findChild<QLineEdit *>("searchInput")
+                  ->palette()
+                  .color(QPalette::PlaceholderText));
   };
   QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
   saveTheme("light");

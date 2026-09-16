@@ -39,6 +39,12 @@ backdrop, small rounded corners, and DWM framing/shadow. Older Windows versions
 and unavailable native effects use a simple translucent panel and thin border.
 No wallpaper sampling or Qt drop-shadow effect is used.
 
+A translucent theme-colored layer over Acrylic bounds the background brightness
+while retaining desktop blur and color blending. Primary/secondary text and icons
+remain readable even with dark appearance over white content or light appearance
+over black content. Focus accents are minimally lightened/darkened when needed,
+and selected text uses the higher-contrast black/white foreground.
+
 The palette is 660 logical pixels wide and opens on the screen containing the
 cursor, horizontally centered with its top edge around 35% of the available
 screen height. Height follows the results, displaying up to six 44-pixel rows
@@ -56,6 +62,10 @@ and run `test_mainwindow` through CTest. It exports light/dark native and fallba
 previews; normal test runs do not capture the desktop.
 
 The same opt-in exports `readme-light.png`, `readme-dark.png`, and `tray.png`.
+`dark-on-white.png`, `dark-on-black.png`, `light-on-white.png`, and
+`light-on-black.png` are simulated extreme-backdrop contrast previews, rendered
+without desktop capture or native blur. Normal tests also check contrast on
+white, black, and saturated backgrounds.
 The tray uses the Windows system menu font (or the platform system font) and
 compact spacing. Checkmarks are painted independently of the Qt style so their
 size and contrast remain consistent across DPI and themes. Checked-state previews

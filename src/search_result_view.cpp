@@ -1,4 +1,5 @@
 #include "search_result_view.h"
+#include "palette_theme.h"
 
 #include <QFont>
 #include <QPainter>
@@ -110,10 +111,9 @@ void SearchResultItemDelegate::paint(QPainter *painter,
   const QRect rowRect = option.rect.adjusted(0, 2, 0, -2);
   const bool selected = (option.state & QStyle::State_Selected) != 0;
   const bool hovered = (option.state & QStyle::State_MouseOver) != 0;
+  const auto colors = ColorsForPalette(darkMode_);
   if (selected || hovered) {
-    const QColor rowBg =
-        selected ? (darkMode_ ? QColor(255, 255, 255, 28) : QColor(0, 0, 0, 16))
-                 : (darkMode_ ? QColor(255, 255, 255, 14) : QColor(0, 0, 0, 7));
+    const QColor rowBg = selected ? colors.selectedRow : colors.hoveredRow;
     painter->setPen(Qt::NoPen);
     painter->setBrush(rowBg);
     painter->drawRoundedRect(rowRect, 6, 6);
@@ -146,19 +146,19 @@ void SearchResultItemDelegate::paint(QPainter *painter,
                        typeWidth, rowRect.height());
   const QRect nameRect = rowRect.adjusted(40, 0, -typeWidth - 32, 0);
 
-  painter->setPen(QPen(darkMode_ ? QColor("#CBD5E1") : QColor("#616161"), 1.5));
+  painter->setPen(QPen(colors.icon, 1.5));
   PaintTypeIcon(painter,
                 QRectF(rowRect.left() + 12, rowRect.center().y() - 8, 16, 16),
                 typeRaw.toLower());
 
   painter->setFont(nameFont);
-  painter->setPen(darkMode_ ? QColor("#F1F5F9") : QColor("#1F1F1F"));
+  painter->setPen(colors.text);
   painter->drawText(
       nameRect, Qt::AlignVCenter | Qt::AlignLeft,
       nameMetrics.elidedText(name, Qt::ElideRight, nameRect.width()));
 
   painter->setFont(typeFont);
-  painter->setPen(darkMode_ ? QColor(148, 163, 184) : QColor(104, 104, 104));
+  painter->setPen(colors.secondary);
   painter->drawText(typeRect, Qt::AlignVCenter | Qt::AlignRight, typeText);
   painter->restore();
 }

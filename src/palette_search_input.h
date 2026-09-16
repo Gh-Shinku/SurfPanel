@@ -5,6 +5,7 @@ class PaletteSearchInput final : public QLineEdit {
 public:
   explicit PaletteSearchInput(QWidget *parent = nullptr);
   void setAccentColor(const QColor &color);
+  void setThemeColors(const QColor &text, const QColor &placeholder);
 
 protected:
   void paintEvent(QPaintEvent *event) override;

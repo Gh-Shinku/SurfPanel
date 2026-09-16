@@ -36,6 +36,10 @@ Windows 11 22H2 及以上使用系统 Desktop Acrylic 背景、小圆角及 DWM 
 旧版 Windows 或原生效果不可用时使用单一半透明填充和细边框，不采样壁纸，
 不使用 Qt drop-shadow。
 
+Acrylic 上叠加半透明主题色，限制背景亮度，同时保留桌面模糊和透色效果。
+深色主题叠在白色内容上、浅色主题叠在黑色内容上时，主文字、辅助文字和图标仍可辨认。
+必要时仅小幅提亮或压暗焦点强调色，文字选中态选择对比度更高的黑色或白色前景。
+
 窗口默认宽 660 个逻辑像素，打开在鼠标所在屏幕，水平居中，顶边约位于可用高度的 35%。
 高度随结果数量调整，最多显示六行 44 px 结果，其余通过滚动查看。
 没有结果时显示不可执行的提示行；图标与 `Link`、`Snippet`、`Plugin` 标签区分功能类型。
@@ -49,6 +53,9 @@ UI 验证可设置 `SURFPANEL_UI_CAPTURE_DIR` 为构建产物目录，再通过 
 `test_mainwindow`，导出深浅主题的原生与 fallback 预览；常规测试不会截图。
 
 同时导出 `readme-light.png`、`readme-dark.png` 和 `tray.png`。
+`dark-on-white.png`、`dark-on-black.png`、`light-on-white.png` 和
+`light-on-black.png` 为极端背景模拟预览，不依赖桌面截图，也不包含原生模糊效果。
+常规测试同时检查白色、黑色和高饱和背景下的对比度。
 托盘菜单使用 Windows 系统菜单字体（其他平台使用系统字体）和紧凑间距。
 勾选标记独立于 Qt 样式绘制，确保不同 DPI 和主题下大小、对比度一致。
 `tray-checked.png`、`tray-light-checked.png` 和 `tray-dark-checked.png`

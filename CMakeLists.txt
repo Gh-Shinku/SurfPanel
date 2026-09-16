@@ -95,6 +95,7 @@ add_library(surfpanel_ui STATIC
   src/palette_search_input.cpp
   src/palette_search_input.h
   src/palette_geometry.h
+  src/palette_theme.h
   src/fluent_panel.cpp
   src/fluent_panel.h
   src/mainwindow.cpp
