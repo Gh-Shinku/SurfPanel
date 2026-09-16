@@ -30,6 +30,8 @@ class FakeClipboardBackend final : public ClipboardBackend {
 public:
   ClipboardReadResult readResult;
   bool writeResult = true;
+  ClipboardWriteResult nextWriteResult = ClipboardWriteResult::Written;
+  quint32 expectedWriteSequence = 0;
   quint32 writtenSequence = 99;
   int readCallCount = 0;
   int writeCallCount = 0;
@@ -40,13 +42,22 @@ public:
     return readResult;
   }
 
-  bool writeUnicodeText(const QString &text, quint32 *sequenceNumber) override {
+  ClipboardWriteResult writeUnicodeText(const QString &text,
+                                        quint32 expectedSequence,
+                                        quint32 *sequenceNumber) override {
     ++writeCallCount;
+    expectedWriteSequence = expectedSequence;
+    if (!writeResult) {
+      return ClipboardWriteResult::Failed;
+    }
+    if (nextWriteResult != ClipboardWriteResult::Written) {
+      return nextWriteResult;
+    }
     writtenText = text;
     if (writeResult && sequenceNumber != nullptr) {
       *sequenceNumber = writtenSequence;
     }
-    return writeResult;
+    return ClipboardWriteResult::Written;
   }
 };
 
@@ -288,6 +299,51 @@ TEST(ClipboardFilterTest, SelfWrittenSequenceIsIgnored) {
   ASSERT_EQ(1, backend.writeCallCount);
 }
 
+TEST(ClipboardFilterTest, ManualFilteringBypassesSourceAndDisabledMonitoring) {
+  PdfTextTransformer transformer;
+  ClipboardProcessor processor(transformer);
+  FakeClipboardBackend backend;
+  backend.readResult = ReadyText("browser.exe", "A line\ncontinues.", 42);
+  ASSERT_EQ(ClipboardProcessResult::Written,
+            processor.process(&backend, std::nullopt, true, 42));
+  ASSERT_EQ(QString("A line continues."), backend.writtenText);
+  ASSERT_EQ(quint32(42), backend.expectedWriteSequence);
+
+  backend.readResult = ReadyText("SurfPanel.exe", "Single line.", 99);
+  ASSERT_EQ(ClipboardProcessResult::Written,
+            processor.process(&backend, std::nullopt, true, 99));
+  ASSERT_EQ(QString("Single line."), backend.writtenText);
+}
+
+TEST(ClipboardFilterTest, ManualFilteringRejectsEmptyAndNonText) {
+  PdfTextTransformer transformer;
+  ClipboardProcessor processor(transformer);
+  FakeClipboardBackend backend;
+  backend.readResult = ReadyText("browser.exe", "");
+  ASSERT_EQ(ClipboardProcessResult::NoText,
+            processor.process(&backend, std::nullopt, true, 1));
+  backend.readResult.content.hasUnicodeText = false;
+  ASSERT_EQ(ClipboardProcessResult::NoText,
+            processor.process(&backend, std::nullopt, true, 1));
+  ASSERT_EQ(0, backend.writeCallCount);
+}
+
+TEST(ClipboardFilterTest, ClipboardChangesAndWriteContentionAreReported) {
+  PdfTextTransformer transformer;
+  ClipboardProcessor processor(transformer);
+  FakeClipboardBackend backend;
+  backend.readResult = ReadyText("browser.exe", "Latest text", 43);
+  ASSERT_EQ(ClipboardProcessResult::Changed,
+            processor.process(&backend, std::nullopt, true, 42));
+  ASSERT_EQ(0, backend.writeCallCount);
+  backend.nextWriteResult = ClipboardWriteResult::Changed;
+  ASSERT_EQ(ClipboardProcessResult::Changed,
+            processor.process(&backend, std::nullopt, true, 43));
+  backend.nextWriteResult = ClipboardWriteResult::Busy;
+  ASSERT_EQ(ClipboardProcessResult::Retry,
+            processor.process(&backend, std::nullopt, true, 43));
+}
+
 TEST(ClipboardFilterTest, MissingConfigurationDisablesPlugin) {
   PluginConfigFixture fixture;
   ClipboardFilterPlugin plugin;
@@ -353,6 +409,129 @@ source_processes = ["SumatraPDF.exe"]
 }
 
 #ifdef Q_OS_WIN
+TEST(ClipboardFilterTest, ManualFunctionWorksWithMonitoringDisabled) {
+  PluginConfigFixture fixture;
+  fixture.write("plugins/clipboard-filter.toml", "enabled = false\n");
+  QWindow window;
+  PluginManager manager;
+  ASSERT_TRUE(
+      manager.registerPlugin(std::make_unique<ClipboardFilterPlugin>()));
+  PluginHostContext host;
+  host.nativeWindow = window.winId();
+  host.eventLoopOwner = &window;
+  manager.initialize(host);
+  ASSERT_TRUE(!manager.reload(fixture.root).hasErrors);
+  ASSERT_TRUE(!manager.isActive("clipboard-filter"));
+  auto *clipboard = QGuiApplication::clipboard();
+  const auto previous = clipboard->text();
+  clipboard->setText("A browser copy\ncontinues here.");
+  PluginFunctionResult result;
+  int completions = 0;
+  manager.invokeFunction("clipboard-filter", "filter", [&](auto value) {
+    result = value;
+    ++completions;
+  });
+  QElapsedTimer completionTimer;
+  completionTimer.start();
+  while (completions == 0 && completionTimer.elapsed() < 1000) {
+    QCoreApplication::processEvents();
+    QThread::msleep(10);
+  }
+  const QString actual = clipboard->text();
+  const bool ownedByHost =
+      GetClipboardOwner() == reinterpret_cast<HWND>(host.nativeWindow);
+  manager.shutdown();
+  clipboard->setText(previous);
+  ASSERT_TRUE(result.succeeded);
+  ASSERT_EQ(1, completions);
+  ASSERT_EQ(QString("A browser copy continues here."), actual);
+  ASSERT_TRUE(ownedByHost);
+}
+
+TEST(ClipboardFilterTest, StopCancelsManualRetriesExactlyOnce) {
+  ClipboardFilterPlugin plugin([](WId) {
+    auto backend = std::make_unique<FakeClipboardBackend>();
+    backend->readResult.status = ClipboardReadStatus::Busy;
+    return backend;
+  });
+  PluginHostContext host;
+  host.nativeWindow = 1;
+  host.eventLoopOwner = &plugin;
+  int completions = 0;
+  bool succeeded = true;
+  plugin.invokeFunction("filter", host, [&](auto result) {
+    ++completions;
+    succeeded = result.succeeded;
+  });
+  ASSERT_EQ(0, completions);
+  plugin.stop();
+  QElapsedTimer timer;
+  timer.start();
+  while (timer.elapsed() < 150) {
+    QCoreApplication::processEvents();
+    QThread::msleep(10);
+  }
+  ASSERT_EQ(1, completions);
+  ASSERT_TRUE(!succeeded);
+}
+
+TEST(ClipboardFilterTest, ManualRetryCancelsWhenClipboardSequenceChanges) {
+  FakeClipboardBackend *backend = nullptr;
+  ClipboardFilterPlugin plugin([&](WId) {
+    auto value = std::make_unique<FakeClipboardBackend>();
+    value->readResult.status = ClipboardReadStatus::Busy;
+    backend = value.get();
+    return value;
+  });
+  PluginHostContext host;
+  host.nativeWindow = 1;
+  host.eventLoopOwner = &plugin;
+  int completions = 0;
+  PluginFunctionResult result;
+  const auto initialSequence = GetClipboardSequenceNumber();
+  plugin.invokeFunction("filter", host, [&](auto value) {
+    result = value;
+    ++completions;
+  });
+  backend->readResult =
+      ReadyText("browser.exe", "New content", initialSequence + 1);
+  QElapsedTimer timer;
+  timer.start();
+  while (completions == 0 && timer.elapsed() < 1000) {
+    QCoreApplication::processEvents();
+    QThread::msleep(10);
+  }
+  ASSERT_EQ(1, completions);
+  ASSERT_TRUE(!result.succeeded);
+  ASSERT_TRUE(result.message.contains("changed"));
+}
+
+TEST(ClipboardFilterTest, ManualBusyRetriesEventuallyFail) {
+  ClipboardFilterPlugin plugin([](WId) {
+    auto backend = std::make_unique<FakeClipboardBackend>();
+    backend->readResult.status = ClipboardReadStatus::Busy;
+    return backend;
+  });
+  PluginHostContext host;
+  host.nativeWindow = 1;
+  host.eventLoopOwner = &plugin;
+  int completions = 0;
+  PluginFunctionResult result;
+  plugin.invokeFunction("filter", host, [&](auto value) {
+    result = value;
+    ++completions;
+  });
+  QElapsedTimer timer;
+  timer.start();
+  while (completions == 0 && timer.elapsed() < 1000) {
+    QCoreApplication::processEvents();
+    QThread::msleep(10);
+  }
+  ASSERT_EQ(1, completions);
+  ASSERT_TRUE(!result.succeeded);
+  ASSERT_TRUE(result.message.contains("busy"));
+}
+
 TEST(ClipboardFilterTest, NativeListenerTransformsMatchingClipboardUpdates) {
   PluginConfigFixture fixture;
   const QString processName =

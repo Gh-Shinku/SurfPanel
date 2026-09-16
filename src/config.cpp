@@ -141,6 +141,15 @@ ParsedItem ParseItem(const toml::value &entry) {
     snippetPayload.snippet =
         QString::fromStdString(toml::find<std::string>(payload, "snippet"));
     item.payload = snippetPayload;
+  } else if (item.type == "plugin") {
+    PluginPayload pluginPayload{
+        QString::fromStdString(toml::find<std::string>(payload, "plugin")),
+        QString::fromStdString(toml::find<std::string>(payload, "function"))};
+    if (pluginPayload.plugin.trimmed().isEmpty() ||
+        pluginPayload.function.trimmed().isEmpty()) {
+      throw std::runtime_error("plugin and function must not be empty");
+    }
+    item.payload = pluginPayload;
   } else {
     throw std::runtime_error("Unknown item type: " + item.type.toStdString() +
                              " for item: " + item.name.toStdString());
@@ -486,6 +495,11 @@ bool WriteItemsToToml(const fs::path &path,
                std::holds_alternative<SnippetPayload>(item.payload)) {
       payload["snippet"] =
           std::get<SnippetPayload>(item.payload).snippet.toStdString();
+    } else if (item.type == "plugin" &&
+               std::holds_alternative<PluginPayload>(item.payload)) {
+      const auto &target = std::get<PluginPayload>(item.payload);
+      payload["plugin"] = target.plugin.toStdString();
+      payload["function"] = target.function.toStdString();
     } else {
       continue;
     }

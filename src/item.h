@@ -13,7 +13,12 @@ struct SnippetPayload {
   QString snippet;
 };
 
-using Payload = std::variant<UrlPayload, SnippetPayload>;
+struct PluginPayload {
+  QString plugin;
+  QString function;
+};
+
+using Payload = std::variant<UrlPayload, SnippetPayload, PluginPayload>;
 
 struct StringItem {
   QString name;

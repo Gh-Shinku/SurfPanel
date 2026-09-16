@@ -187,6 +187,44 @@ For compatibility, an existing `[clipboard_filter]` table in `items.toml` is
 still accepted when the dedicated plugin file does not exist. This legacy form
 emits a deprecation warning; the dedicated file always takes precedence.
 
+### Calling Plugin Functions
+
+Plugin functions use the same configurable items as URLs and snippets:
+
+```toml
+[[items]]
+name = "Filter Clipboard"
+type = "plugin"
+keywords = ["filter", "clipboard", "my-copy-alias"]
+[items.payload]
+plugin = "clipboard-filter"
+function = "filter"
+```
+
+`plugin` is the stable plugin ID, not its display name. `function` is the
+published function name; both are non-empty strings matched exactly. Customize
+`name` and `keywords` freely without changing the target. Imports, overrides,
+disabled items, configuration fallback, and recently used items work as usual.
+To optionally search only plugin items with `p `, set
+`plugin = "p"` under `[search.prefixes]`.
+
+| Plugin ID | Function | Behavior | Platform |
+| --- | --- | --- | --- |
+| `clipboard-filter` | `filter` | Normalize current Unicode clipboard text and write it back under SurfPanel's ownership. | Windows |
+
+The `filter` function uses the PDF normalization rules described above, accepts
+text from any source, and works even when automatic monitoring is disabled or
+its configuration is missing or invalid. It reads the current system clipboard,
+not Ditto's history, and does not paste into the active application. Unchanged
+text is also written back once. Empty or non-text content produces a failure
+notification. Brief clipboard contention is retried asynchronously; if another
+copy replaces the content, the operation is cancelled rather than overwriting
+the new copy. Reloading config or shutting down cancels pending work.
+
+The bundled configuration includes this item. Existing installations retain
+their user configuration; add the example manually and reload config. Failed
+calls show a tray notification and are not added to recently used items.
+
 ### Plugin Architecture
 
 Built-in plugins implement the versioned interface under `src/plugin/`, are

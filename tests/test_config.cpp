@@ -99,6 +99,72 @@ snippet = "ls -lah"
   fs::remove(path);
 }
 
+TEST(ConfigTest, PluginItemsSupportOverridesDisabledEntriesAndFallback) {
+  const auto root = fs::temp_directory_path() / "surfpanel_plugin_items_root";
+  fs::remove_all(root);
+  WriteTomlFile(root / "packages" / "demo", "items.toml", R"(
+[[items]]
+name = "My Filter"
+type = "plugin"
+[items.payload]
+plugin = "clipboard-filter"
+function = "other"
+[[items]]
+name = "Disabled Filter"
+type = "plugin"
+[items.payload]
+plugin = "clipboard-filter"
+function = "filter"
+)");
+  WriteTomlFile(root, "items.toml", R"(
+imports = ["packages/demo/items.toml"]
+[search.prefixes]
+plugin = "p"
+[[items]]
+name = "My Filter"
+type = "plugin"
+keywords = ["my-alias"]
+[items.payload]
+plugin = "clipboard-filter"
+function = "filter"
+[[items]]
+name = "Disabled Filter"
+type = "plugin"
+disabled = true
+)");
+  const auto loaded = LoadConfigWithFallback(root);
+  ASSERT_TRUE(loaded.ok);
+  ASSERT_EQ(std::size_t(1), loaded.items.size());
+  ASSERT_EQ(QString("my-alias"), loaded.items[0].keywords[0]);
+  ASSERT_EQ(QString("filter"),
+            std::get<PluginPayload>(loaded.items[0].payload).function);
+  ASSERT_EQ(QString("p"),
+            FindPrefixByType(loaded.searchPrefixes, "plugin")->prefix);
+  WriteTomlFile(root, "items.toml", "[[items]\n");
+  const auto fallback = LoadConfigWithFallback(root);
+  ASSERT_TRUE(fallback.usedFallback);
+  ASSERT_EQ(std::size_t(1), fallback.items.size());
+  const auto target = std::get<PluginPayload>(fallback.items[0].payload);
+  ASSERT_EQ(QString("clipboard-filter"), target.plugin);
+  ASSERT_EQ(QString("filter"), target.function);
+  fs::remove_all(root);
+}
+
+TEST(ConfigTest, PluginTargetsRequireNonEmptyStringFields) {
+  for (const auto &payload : std::vector<std::string>{
+           "plugin = \"\"\nfunction = \"filter\"\n",
+           "plugin = \"clipboard-filter\"\nfunction = \" \"\n",
+           "plugin = \"clipboard-filter\"\n",
+           "plugin = 42\nfunction = \"filter\"\n"}) {
+    const auto path = WriteTomlFile(
+        "[[items]]\nname = \"Filter\"\ntype = \"plugin\"\n[items.payload]\n" +
+            payload,
+        "surfpanel_invalid_plugin_item.toml");
+    CaptureRuntimeError([&]() { static_cast<void>(loadStringItems(path)); });
+    fs::remove(path);
+  }
+}
+
 TEST(ConfigTest, ThrowsOnMissingFile) {
   const fs::path missingPath =
       fs::temp_directory_path() / "surfpanel_config_missing.toml";

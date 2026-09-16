@@ -2,6 +2,7 @@
 #include "test_harness.h"
 
 #include <memory>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -40,6 +41,27 @@ public:
     ++eventCount;
     return handlesEvent;
   }
+
+  std::vector<PluginFunction> functions() const override {
+    return {{"run", "Run the test function."}};
+  }
+  void invokeFunction(const QString &, const PluginHostContext &,
+                      PluginFunctionCompletion completion) override {
+    ++functionCount;
+    if (throwFunction) {
+      throw std::runtime_error("test failure");
+    }
+    if (deferFunction) {
+      pendingCompletion = std::move(completion);
+    } else {
+      completion({true, {}});
+      completion({true, {}});
+    }
+  }
+  bool deferFunction = false;
+  bool throwFunction = false;
+  int functionCount = 0;
+  PluginFunctionCompletion pendingCompletion;
 
   PluginConfigurationState state_;
   QString configurationMessage;
@@ -161,6 +183,55 @@ TEST(PluginManagerTest, ShutdownStopsPluginsInReverseOrder) {
   ASSERT_EQ(std::size_t(2), stopOrder.size());
   ASSERT_EQ(QString("second"), stopOrder[0]);
   ASSERT_EQ(QString("first"), stopOrder[1]);
+}
+
+TEST(PluginManagerTest, FunctionsDoNotRequireActiveMonitoring) {
+  PluginManager manager;
+  auto plugin =
+      std::make_unique<FakePlugin>("demo", PluginConfigurationState::Disabled);
+  auto *raw = plugin.get();
+  manager.registerPlugin(std::move(plugin));
+  manager.initialize(HostContext());
+  manager.reload("C:/config");
+  ASSERT_EQ(std::size_t(1), manager.functions("demo").size());
+  int completions = 0;
+  bool succeeded = false;
+  manager.invokeFunction("demo", "run", [&](auto result) {
+    ++completions;
+    succeeded = result.succeeded;
+  });
+  ASSERT_TRUE(succeeded);
+  ASSERT_EQ(1, completions);
+  ASSERT_EQ(1, raw->functionCount);
+  manager.invokeFunction("demo", "missing",
+                         [&](auto result) { ASSERT_TRUE(!result.succeeded); });
+  manager.invokeFunction("missing", "run",
+                         [&](auto result) { ASSERT_TRUE(!result.succeeded); });
+  raw->throwFunction = true;
+  manager.invokeFunction("demo", "run",
+                         [&](auto result) { ASSERT_TRUE(!result.succeeded); });
+}
+
+TEST(PluginManagerTest, ReloadCancelsInactivePluginFunctionsExactlyOnce) {
+  PluginManager manager;
+  auto plugin =
+      std::make_unique<FakePlugin>("demo", PluginConfigurationState::Invalid);
+  auto *raw = plugin.get();
+  raw->deferFunction = true;
+  manager.registerPlugin(std::move(plugin));
+  manager.initialize(HostContext());
+  manager.reload("C:/config");
+  int completions = 0;
+  bool succeeded = true;
+  manager.invokeFunction("demo", "run", [&](auto result) {
+    ++completions;
+    succeeded = result.succeeded;
+  });
+  manager.reload("C:/config");
+  raw->pendingCompletion({true, {}});
+  ASSERT_EQ(1, completions);
+  ASSERT_TRUE(!succeeded);
+  ASSERT_EQ(1, raw->stopCount);
 }
 
 int main() { return RUN_ALL_TESTS(); }

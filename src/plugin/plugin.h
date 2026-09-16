@@ -7,6 +7,7 @@
 #include <QtGui/qwindowdefs.h>
 #include <filesystem>
 #include <functional>
+#include <vector>
 
 inline constexpr int kSurfPanelPluginApiVersion = 1;
 
@@ -39,6 +40,18 @@ struct PluginHostContext {
   std::function<void(QtMsgType, const QString &)> log;
 };
 
+struct PluginFunction {
+  QString name;
+  QString description;
+};
+
+struct PluginFunctionResult {
+  bool succeeded = false;
+  QString message;
+};
+
+using PluginFunctionCompletion = std::function<void(PluginFunctionResult)>;
+
 class IPlugin {
 public:
   virtual ~IPlugin() = default;
@@ -48,6 +61,15 @@ public:
   configure(const PluginConfigurationContext &context) = 0;
   virtual bool start(const PluginHostContext &context) = 0;
   virtual void stop() = 0;
+
+  virtual std::vector<PluginFunction> functions() const { return {}; }
+  virtual void invokeFunction(const QString &name,
+                              const PluginHostContext &context,
+                              PluginFunctionCompletion completion) {
+    Q_UNUSED(name);
+    Q_UNUSED(context);
+    completion({false, "Function is not supported."});
+  }
 
   virtual bool handleNativeEvent(const QByteArray &eventType, void *message,
                                  qintptr *result) {

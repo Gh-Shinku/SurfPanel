@@ -164,6 +164,36 @@ Unicode 文本。匹配来源的文本即使无需修改，也会由 SurfPanel �
 为兼容旧配置，当独立插件配置文件不存在时，仍会读取 `items.toml` 中的
 `[clipboard_filter]`。该旧格式会产生弃用警告；独立插件配置文件始终优先。
 
+### 调用插件功能
+
+通过原有配置入口添加插件 item，名称和搜索关键词可以自由修改：
+
+```toml
+[[items]]
+name = "过滤剪贴板"
+type = "plugin"
+keywords = ["filter", "clipboard", "剪贴板", "过滤"]
+[items.payload]
+plugin = "clipboard-filter"
+function = "filter"
+```
+
+`plugin` 使用稳定插件 ID，而非显示名称；`function` 使用公开的功能名。
+两个字段必须为非空字符串，精确匹配，与搜索 `keywords` 无关。
+插件 item 同样支持配置导入、覆盖、禁用、缓存回退和最近使用。
+如需使用 `p ` 只搜索插件，可在 `[search.prefixes]` 中配置 `plugin = "p"`。
+
+| 插件 ID | 功能名 | 行为 | 平台 |
+| --- | --- | --- | --- |
+| `clipboard-filter` | `filter` | 使用现有 PDF 文本规则过滤当前剪贴板，并以 SurfPanel 的 owner 写回。 | Windows |
+
+`filter` 接受任意来源的 Unicode 文本，即使自动监听关闭、配置缺失或无效也可调用。
+它只读取当前系统剪贴板，不读取 Ditto 历史，也不自动粘贴。无需修改的内容原样写回一次。
+空文本或非文本会提示失败。遇到短暂占用时异步重试；期间出现新的复制则取消，
+避免覆盖新内容。配置 reload 或退出会取消未完成任务。只有成功执行才记录最近使用。
+
+默认配置已包含该 item。已有安装会保留用户配置，请手动添加上述示例并 reload。
+
 ### 插件架构
 
 内置插件实现 `src/plugin/` 下带版本号的统一接口，通过内置注册表加入运行时，

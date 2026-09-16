@@ -3,6 +3,14 @@ imports = [
 ]
 
 [[items]]
+name = "Filter Clipboard"
+type = "plugin"
+keywords = ["filter", "clipboard", "剪贴板", "过滤"]
+[items.payload]
+plugin = "clipboard-filter"
+function = "filter"
+
+[[items]]
 name = "CppReference"
 type = "url"
 keywords = ["cpp", "stl", "docs"]

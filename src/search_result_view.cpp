@@ -80,7 +80,10 @@ void SearchResultItemDelegate::paint(QPainter *painter,
   const QString typeRaw =
       index.data(SearchResultListModel::TypeRole).toString();
   const QString typeText =
-      typeRaw.compare("url", Qt::CaseInsensitive) == 0 ? "URL" : "SNIPPET";
+      typeRaw.compare("url", Qt::CaseInsensitive) == 0
+          ? "URL"
+          : (typeRaw.compare("plugin", Qt::CaseInsensitive) == 0 ? "PLUGIN"
+                                                                 : "SNIPPET");
 
   QFont nameFont = option.font;
   nameFont.setPointSizeF(11.0);

@@ -37,6 +37,13 @@
   couple plugin implementations directly to `MainWindow`.
 - Invalid plugin configuration must disable only that plugin. Cover parsing,
   lifecycle, and isolation behavior with focused tests.
+- Publish callable functions through `IPlugin::functions()` and
+  `invokeFunction()`, and document stable plugin IDs and function names in both
+  READMEs. Palette items use `type = "plugin"` with `payload.plugin` and
+  `payload.function`; names and search keywords remain user-configurable.
+- Functions run on the GUI event loop and may finish asynchronously. Complete
+  each call once, release resources in `stop()`, and keep manual functions
+  independent of automatic-monitoring configuration where applicable.
 
 ## Commits
 

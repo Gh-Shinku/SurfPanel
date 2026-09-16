@@ -46,12 +46,15 @@ private:
   std::vector<QString> sourceProcesses_;
 };
 
+enum class ClipboardWriteResult { Written, Busy, Changed, Failed };
+
 class ClipboardBackend {
 public:
   virtual ~ClipboardBackend() = default;
   virtual ClipboardReadResult read() = 0;
-  virtual bool writeUnicodeText(const QString &text,
-                                quint32 *sequenceNumber) = 0;
+  virtual ClipboardWriteResult writeUnicodeText(const QString &text,
+                                                quint32 expectedSequence,
+                                                quint32 *sequenceNumber) = 0;
 };
 
 enum class ClipboardProcessResult {
@@ -59,6 +62,8 @@ enum class ClipboardProcessResult {
   Retry,
   WriteFailed,
   Written,
+  NoText,
+  Changed,
 };
 
 class ClipboardProcessor {
@@ -66,9 +71,11 @@ public:
   explicit ClipboardProcessor(const TextTransformer &transformer);
 
   void setConfiguration(const ClipboardFilterConfig &config);
-  ClipboardProcessResult process(ClipboardBackend *backend,
-                                 const std::optional<ClipboardUpdateContext>
-                                     &updateContext = std::nullopt);
+  ClipboardProcessResult process(
+      ClipboardBackend *backend,
+      const std::optional<ClipboardUpdateContext> &updateContext = std::nullopt,
+      bool manual = false,
+      std::optional<quint32> expectedSequence = std::nullopt);
 
 private:
   SourceMatcher sourceMatcher_;
@@ -79,10 +86,14 @@ private:
 
 class ClipboardFilterPlugin final : public QObject, public IPlugin {
 public:
-  ClipboardFilterPlugin();
+  using BackendFactory = std::function<std::unique_ptr<ClipboardBackend>(WId)>;
+  explicit ClipboardFilterPlugin(BackendFactory backendFactory = {});
   ~ClipboardFilterPlugin() override;
 
   PluginMetadata metadata() const override;
+  std::vector<PluginFunction> functions() const override;
+  void invokeFunction(const QString &name, const PluginHostContext &context,
+                      PluginFunctionCompletion completion) override;
   PluginConfigurationResult
   configure(const PluginConfigurationContext &context) override;
   bool start(const PluginHostContext &context) override;
@@ -93,6 +104,8 @@ public:
 private:
   void scheduleProcessing(int attempt, ClipboardUpdateContext updateContext);
   void log(QtMsgType type, const QString &message) const;
+  void processManual(int attempt, quint32 expectedSequence);
+  void finishManual(PluginFunctionResult result);
 
   ClipboardFilterConfig config_;
   PdfTextTransformer transformer_;
@@ -102,4 +115,7 @@ private:
   bool listening_ = false;
   bool processing_ = false;
   int generation_ = 0;
+  std::unique_ptr<ClipboardBackend> manualBackend_;
+  PluginFunctionCompletion manualCompletion_;
+  BackendFactory backendFactory_;
 };

@@ -28,12 +28,21 @@ public:
                          qintptr *result) override;
   bool isActive(const QString &pluginId) const;
   std::size_t pluginCount() const;
+  std::vector<PluginFunction> functions(const QString &pluginId) const;
+  void invokeFunction(const QString &pluginId, const QString &functionName,
+                      PluginFunctionCompletion completion);
 
 private:
+  struct PendingFunction {
+    std::shared_ptr<bool> completed;
+    PluginFunctionCompletion finish;
+  };
   struct Entry {
     std::unique_ptr<IPlugin> plugin;
     PluginMetadata metadata;
     bool active = false;
+    bool usedFunctions = false;
+    std::vector<PendingFunction> pendingFunctions;
   };
 
   void stopEntry(Entry *entry);

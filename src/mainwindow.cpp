@@ -22,6 +22,7 @@
 #include <QLineEdit>
 #include <QListView>
 #include <QMenu>
+#include <QPointer>
 #include <QProcess>
 #include <QScreen>
 #include <QSettings>
@@ -542,20 +543,6 @@ void MainWindow::setupHotkeyPlaceholder(bool enableHotkey) {
 }
 
 ConfigLoadResult MainWindow::loadBackendItems() {
-  const auto configRoot = FindConfigRoot();
-  if (!configRoot.has_value()) {
-    pluginManager_.shutdown();
-    items_.clear();
-    searchEngine_.setItems({});
-    searchEngine_.setSearchPrefixes(DefaultSearchPrefixes());
-    ConfigLoadResult result;
-    result.searchPrefixes = DefaultSearchPrefixes();
-    result.ok = false;
-    result.message = "Config directory not found.";
-    return result;
-  }
-
-  auto result = LoadConfigWithFallback(*configRoot);
   createWinId();
   PluginHostContext pluginHost;
   pluginHost.eventLoopOwner = this;
@@ -568,6 +555,19 @@ ConfigLoadResult MainWindow::loadBackendItems() {
     }
   };
   pluginManager_.initialize(std::move(pluginHost));
+  const auto configRoot = FindConfigRoot();
+  if (!configRoot.has_value()) {
+    items_.clear();
+    searchEngine_.setItems({});
+    searchEngine_.setSearchPrefixes(DefaultSearchPrefixes());
+    ConfigLoadResult result;
+    result.searchPrefixes = DefaultSearchPrefixes();
+    result.ok = false;
+    result.message = "Config directory not found.";
+    return result;
+  }
+
+  auto result = LoadConfigWithFallback(*configRoot);
   const PluginReloadReport pluginReport = pluginManager_.reload(*configRoot);
   if (!pluginReport.messages.isEmpty()) {
     if (!result.message.empty()) {
@@ -846,31 +846,51 @@ void MainWindow::invokeItemAction(const StringItem *item) {
     payload = std::get<SnippetPayload>(item->payload).snippet;
   }
 
-  if (actionName.empty() || payload.isEmpty()) {
+  const bool pluginAction =
+      item->type == "plugin" &&
+      std::holds_alternative<PluginPayload>(item->payload);
+  if (!pluginAction && (actionName.empty() || payload.isEmpty())) {
     return;
   }
+  const Payload itemPayload = item->payload;
+  const RecentItemKey recentKey = RecentKeyForItem(*item);
 
   hidePanel(false);
   input_->clear();
   resultsModel_->setResults({});
 
-  const RecentItemKey recentKey = RecentKeyForItem(*item);
-
-  QTimer::singleShot(0, this, [this, actionName, payload, recentKey]() {
-    const bool actionSucceeded =
-        actionManager_.invoke(actionName, payload, actionContext_);
-#ifdef Q_OS_WIN
-    actionContext_.clearNativePasteTarget();
-#endif
-
-    if (!actionSucceeded) {
-      qWarning() << "Failed to invoke action:"
-                 << QString::fromStdString(actionName);
+  QPointer<MainWindow> guardedThis(this);
+  const auto finish = [guardedThis, recentKey](PluginFunctionResult result) {
+    if (!guardedThis) {
       return;
     }
-
-    if (!recentItemsStore_.recordUse(recentKey, kTopK)) {
+#ifdef Q_OS_WIN
+    guardedThis->actionContext_.clearNativePasteTarget();
+#endif
+    if (!result.succeeded) {
+      qWarning() << "Failed to invoke item:" << recentKey.name
+                 << result.message;
+      if (guardedThis->trayIcon_) {
+        guardedThis->trayIcon_->showMessage("SurfPanel Action", result.message,
+                                            QSystemTrayIcon::Warning, 3500);
+      }
+      return;
+    }
+    if (!guardedThis->recentItemsStore_.recordUse(recentKey, kTopK)) {
       qWarning() << "Failed to record recently used item:" << recentKey.name;
     }
-  });
+  };
+  QTimer::singleShot(
+      0, this,
+      [this, actionName, payload, itemPayload, pluginAction, finish]() {
+        if (pluginAction) {
+          const auto &target = std::get<PluginPayload>(itemPayload);
+          pluginManager_.invokeFunction(target.plugin, target.function, finish);
+        } else {
+          const bool succeeded =
+              actionManager_.invoke(actionName, payload, actionContext_);
+          finish(
+              {succeeded, succeeded ? QString() : "Failed to invoke action."});
+        }
+      });
 }

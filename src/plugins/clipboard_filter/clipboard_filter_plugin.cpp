@@ -145,6 +145,8 @@ public:
       result.status = ClipboardReadStatus::Busy;
       return result;
     }
+    result.content.sequenceNumber = GetClipboardSequenceNumber();
+    result.content.ownerProcessName = ProcessNameForWindow(GetClipboardOwner());
 
     if (!IsClipboardFormatAvailable(CF_UNICODETEXT)) {
       CloseClipboard();
@@ -170,23 +172,24 @@ public:
     result.content.hasUnicodeText = true;
     GlobalUnlock(data);
     CloseClipboard();
-    result.content.sequenceNumber = GetClipboardSequenceNumber();
     result.status = ClipboardReadStatus::Ready;
     return result;
   }
 
-  bool writeUnicodeText(const QString &text, quint32 *sequenceNumber) override {
+  ClipboardWriteResult writeUnicodeText(const QString &text,
+                                        quint32 expectedSequence,
+                                        quint32 *sequenceNumber) override {
     const std::wstring utf16 = text.toStdWString();
     const SIZE_T bytes = (utf16.size() + 1) * sizeof(wchar_t);
     HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes);
     if (memory == nullptr) {
-      return false;
+      return ClipboardWriteResult::Failed;
     }
 
     auto *destination = static_cast<wchar_t *>(GlobalLock(memory));
     if (destination == nullptr) {
       GlobalFree(memory);
-      return false;
+      return ClipboardWriteResult::Failed;
     }
     std::copy(utf16.cbegin(), utf16.cend(), destination);
     destination[utf16.size()] = L'\0';
@@ -194,21 +197,27 @@ public:
 
     if (!OpenClipboard(reinterpret_cast<HWND>(hostWindow_))) {
       GlobalFree(memory);
-      return false;
+      return ClipboardWriteResult::Busy;
+    }
+
+    if (GetClipboardSequenceNumber() != expectedSequence) {
+      CloseClipboard();
+      GlobalFree(memory);
+      return ClipboardWriteResult::Changed;
     }
 
     if (!EmptyClipboard() ||
         SetClipboardData(CF_UNICODETEXT, memory) == nullptr) {
       CloseClipboard();
       GlobalFree(memory);
-      return false;
+      return ClipboardWriteResult::Failed;
     }
 
-    CloseClipboard();
     if (sequenceNumber != nullptr) {
       *sequenceNumber = GetClipboardSequenceNumber();
     }
-    return true;
+    CloseClipboard();
+    return ClipboardWriteResult::Written;
   }
 
 private:
@@ -253,8 +262,9 @@ void ClipboardProcessor::setConfiguration(const ClipboardFilterConfig &config) {
 
 ClipboardProcessResult ClipboardProcessor::process(
     ClipboardBackend *backend,
-    const std::optional<ClipboardUpdateContext> &updateContext) {
-  if (!enabled_ || backend == nullptr) {
+    const std::optional<ClipboardUpdateContext> &updateContext, bool manual,
+    std::optional<quint32> expectedSequence) {
+  if ((!manual && !enabled_) || backend == nullptr) {
     return ClipboardProcessResult::Ignored;
   }
 
@@ -262,35 +272,120 @@ ClipboardProcessResult ClipboardProcessor::process(
   if (read.status == ClipboardReadStatus::Busy) {
     return ClipboardProcessResult::Retry;
   }
+  if (expectedSequence && read.status == ClipboardReadStatus::Ready &&
+      read.content.sequenceNumber != *expectedSequence) {
+    return ClipboardProcessResult::Changed;
+  }
   if (updateContext.has_value() &&
       updateContext->sequenceNumber == read.content.sequenceNumber &&
       read.content.ownerProcessName.isEmpty()) {
     read.content.ownerProcessName = updateContext->sourceProcessName;
   }
   if (read.status != ClipboardReadStatus::Ready ||
-      selfWrittenSequence_ == read.content.sequenceNumber ||
-      !read.content.hasUnicodeText ||
-      !sourceMatcher_.matches(read.content.ownerProcessName)) {
+      (!manual && (selfWrittenSequence_ == read.content.sequenceNumber ||
+                   !sourceMatcher_.matches(read.content.ownerProcessName)))) {
     return ClipboardProcessResult::Ignored;
+  }
+  if (!read.content.hasUnicodeText || read.content.unicodeText.isEmpty()) {
+    return manual ? ClipboardProcessResult::NoText
+                  : ClipboardProcessResult::Ignored;
   }
 
   const QString transformed = transformer_.transform(read.content.unicodeText);
   // Republish even unchanged text under SurfPanel's ownership so clipboard
   // managers that exclude the source PDF reader can capture every copy.
   quint32 sequenceNumber = 0;
-  if (!backend->writeUnicodeText(transformed, &sequenceNumber)) {
+  const auto write = backend->writeUnicodeText(
+      transformed, read.content.sequenceNumber, &sequenceNumber);
+  if (write == ClipboardWriteResult::Busy) {
+    return ClipboardProcessResult::Retry;
+  }
+  if (write == ClipboardWriteResult::Changed) {
+    return ClipboardProcessResult::Changed;
+  }
+  if (write != ClipboardWriteResult::Written) {
     return ClipboardProcessResult::WriteFailed;
   }
   selfWrittenSequence_ = sequenceNumber;
   return ClipboardProcessResult::Written;
 }
 
-ClipboardFilterPlugin::ClipboardFilterPlugin() : processor_(transformer_) {}
+ClipboardFilterPlugin::ClipboardFilterPlugin(BackendFactory backendFactory)
+    : processor_(transformer_),
+      backendFactory_(backendFactory ? std::move(backendFactory)
+                                     : CreateClipboardBackend) {}
 
 ClipboardFilterPlugin::~ClipboardFilterPlugin() { stop(); }
 
 PluginMetadata ClipboardFilterPlugin::metadata() const {
   return {"clipboard-filter", "Clipboard Filter", kSurfPanelPluginApiVersion};
+}
+
+std::vector<PluginFunction> ClipboardFilterPlugin::functions() const {
+  return {{"filter", "Normalize the current clipboard text and write it back "
+                     "without restricting its source (Windows only)."}};
+}
+
+void ClipboardFilterPlugin::invokeFunction(
+    const QString &name, const PluginHostContext &context,
+    PluginFunctionCompletion completion) {
+  if (name != "filter") {
+    completion({false, "Unknown clipboard function: " + name});
+    return;
+  }
+#ifdef Q_OS_WIN
+  if (manualCompletion_) {
+    completion({false, "Clipboard filtering is already in progress."});
+    return;
+  }
+  if (context.nativeWindow == 0 || context.eventLoopOwner == nullptr) {
+    completion({false, "Clipboard host is not available."});
+    return;
+  }
+  manualBackend_ = backendFactory_(context.nativeWindow);
+  manualCompletion_ = std::move(completion);
+  processManual(0, GetClipboardSequenceNumber());
+#else
+  Q_UNUSED(context);
+  completion({false, "Clipboard filtering is only supported on Windows."});
+#endif
+}
+
+void ClipboardFilterPlugin::finishManual(PluginFunctionResult result) {
+  auto completion = std::move(manualCompletion_);
+  manualCompletion_ = {};
+  manualBackend_.reset();
+  if (completion) {
+    completion(std::move(result));
+  }
+}
+
+void ClipboardFilterPlugin::processManual(int attempt,
+                                          quint32 expectedSequence) {
+  const auto result = processor_.process(manualBackend_.get(), std::nullopt,
+                                         true, expectedSequence);
+  if (result == ClipboardProcessResult::Retry &&
+      attempt < kClipboardMaxRetries) {
+    const int generation = generation_;
+    QTimer::singleShot(kClipboardRetryDelayMs, this,
+                       [this, generation, attempt, expectedSequence]() {
+                         if (generation == generation_ && manualCompletion_) {
+                           processManual(attempt + 1, expectedSequence);
+                         }
+                       });
+    return;
+  }
+  if (result == ClipboardProcessResult::Written) {
+    finishManual({true, {}});
+  } else if (result == ClipboardProcessResult::Changed) {
+    finishManual({false, "Clipboard changed; filtering was cancelled."});
+  } else if (result == ClipboardProcessResult::NoText) {
+    finishManual({false, "Clipboard does not contain non-empty Unicode text."});
+  } else if (result == ClipboardProcessResult::Retry) {
+    finishManual({false, "Clipboard is busy. Please try again."});
+  } else {
+    finishManual({false, "Failed to filter clipboard text."});
+  }
 }
 
 PluginConfigurationResult
@@ -337,7 +432,7 @@ bool ClipboardFilterPlugin::start(const PluginHostContext &context) {
   }
 
   hostContext_ = context;
-  backend_ = CreateClipboardBackend(context.nativeWindow);
+  backend_ = backendFactory_(context.nativeWindow);
   listening_ =
       backend_ != nullptr &&
       AddClipboardFormatListener(reinterpret_cast<HWND>(context.nativeWindow));
@@ -356,6 +451,7 @@ bool ClipboardFilterPlugin::start(const PluginHostContext &context) {
 
 void ClipboardFilterPlugin::stop() {
   ++generation_;
+  finishManual({false, "Clipboard filtering was cancelled."});
   processing_ = false;
 #ifdef Q_OS_WIN
   if (listening_) {

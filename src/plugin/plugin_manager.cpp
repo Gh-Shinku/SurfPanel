@@ -44,6 +44,20 @@ bool PluginManager::registerPlugin(std::unique_ptr<IPlugin> plugin) {
     return false;
   }
 
+  try {
+    const auto available = plugin->functions();
+    std::vector<QString> names;
+    for (const auto &function : available) {
+      if (function.name.trimmed().isEmpty() ||
+          std::find(names.begin(), names.end(), function.name) != names.end()) {
+        return false;
+      }
+      names.push_back(function.name);
+    }
+  } catch (...) {
+    return false;
+  }
+
   entries_.push_back(Entry{std::move(plugin), metadata, false});
   return true;
 }
@@ -172,9 +186,76 @@ bool PluginManager::isActive(const QString &pluginId) const {
 
 std::size_t PluginManager::pluginCount() const { return entries_.size(); }
 
-void PluginManager::stopEntry(Entry *entry) {
-  if (entry == nullptr || !entry->active) {
+std::vector<PluginFunction>
+PluginManager::functions(const QString &pluginId) const {
+  for (const auto &entry : entries_) {
+    if (entry.metadata.id == pluginId) {
+      try {
+        return entry.plugin->functions();
+      } catch (...) {
+        return {};
+      }
+    }
+  }
+  return {};
+}
+
+void PluginManager::invokeFunction(const QString &pluginId,
+                                   const QString &functionName,
+                                   PluginFunctionCompletion completion) {
+  if (!completion) {
     return;
+  }
+  if (!initialized_) {
+    completion({false, "Plugin runtime is not initialized."});
+    return;
+  }
+  for (auto &entry : entries_) {
+    if (entry.metadata.id != pluginId) {
+      continue;
+    }
+    auto completed = std::make_shared<bool>(false);
+    const auto finish = [completed, completion](PluginFunctionResult result) {
+      if (!*completed) {
+        *completed = true;
+        completion(std::move(result));
+      }
+    };
+    try {
+      const auto available = entry.plugin->functions();
+      if (std::none_of(available.begin(), available.end(),
+                       [&functionName](const PluginFunction &function) {
+                         return function.name == functionName;
+                       })) {
+        finish({false, "Unknown plugin function: " + functionName});
+        return;
+      }
+      entry.usedFunctions = true;
+      entry.pendingFunctions.erase(
+          std::remove_if(entry.pendingFunctions.begin(),
+                         entry.pendingFunctions.end(),
+                         [](const PendingFunction &pending) {
+                           return *pending.completed;
+                         }),
+          entry.pendingFunctions.end());
+      entry.pendingFunctions.push_back({completed, finish});
+      entry.plugin->invokeFunction(functionName, hostContext_, finish);
+    } catch (...) {
+      finish({false, "Plugin function threw an exception."});
+    }
+    return;
+  }
+  completion({false, "Unknown plugin: " + pluginId});
+}
+
+void PluginManager::stopEntry(Entry *entry) {
+  if (entry == nullptr || (!entry->active && !entry->usedFunctions)) {
+    return;
+  }
+  auto pending = std::move(entry->pendingFunctions);
+  entry->pendingFunctions.clear();
+  for (const auto &function : pending) {
+    function.finish({false, "Plugin function was cancelled."});
   }
   try {
     entry->plugin->stop();
@@ -182,6 +263,7 @@ void PluginManager::stopEntry(Entry *entry) {
     log(QtCriticalMsg, Diagnostic(entry->metadata, "threw while stopping"));
   }
   entry->active = false;
+  entry->usedFunctions = false;
 }
 
 void PluginManager::log(QtMsgType type, const QString &message) const {

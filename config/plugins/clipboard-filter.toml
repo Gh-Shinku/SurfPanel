@@ -1,4 +1,5 @@
 # Built-in plugin: clipboard-filter
-# Enable this to process Unicode text copied by a configured Windows process.
+# Enable automatic monitoring of Unicode text copied by a configured Windows
+# process. The manually invoked "filter" function does not require this flag.
 enabled = false
 source_processes = ["SumatraPDF.exe"]

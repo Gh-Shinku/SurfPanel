@@ -1,16 +1,20 @@
 #include "item.h"
 #include "mainwindow.h"
 #include "recent_items_store.h"
+#include "search_result_view.h"
 #include "test_harness.h"
 
 #include <QAbstractItemModel>
 #include <QAction>
 #include <QApplication>
+#include <QClipboard>
 #include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QListView>
 #include <QMetaObject>
+#include <QThread>
 
 #include <filesystem>
 #include <vector>
@@ -216,14 +220,71 @@ TEST(MainWindowTest, FailedSnippetActivationIsNotRecordedInRecentCache) {
   QCoreApplication::processEvents();
   ASSERT_EQ(1, list->model()->rowCount());
 
-  ASSERT_TRUE(QMetaObject::invokeMethod(input, "returnPressed",
-                                        Qt::DirectConnection));
+  ASSERT_TRUE(
+      QMetaObject::invokeMethod(input, "returnPressed", Qt::DirectConnection));
   QCoreApplication::processEvents();
 
   RecentItemsStore store(DefaultRecentItemsPath());
   const auto recent = store.load();
   ASSERT_EQ(std::size_t(0), recent.size());
 
+  ResetRecentCache();
+}
+
+#ifdef Q_OS_WIN
+TEST(MainWindowTest, ConfiguredPluginItemFiltersClipboardAndRecordsSuccess) {
+  ResetRecentCache();
+  MainWindow window(nullptr, false);
+  StringItem item;
+  item.name = "My custom filter";
+  item.type = "plugin";
+  item.keywords = {"custom-alias"};
+  item.payload = PluginPayload{"clipboard-filter", "filter"};
+  window.setItems({item});
+  auto *input = window.findChild<QLineEdit *>("searchInput");
+  auto *list = window.findChild<QListView *>("resultsList");
+  input->setText("custom-alias");
+  ASSERT_EQ(1, list->model()->rowCount());
+  ASSERT_EQ(QString("plugin"), list->model()
+                                   ->index(0, 0)
+                                   .data(SearchResultListModel::TypeRole)
+                                   .toString());
+  auto *clipboard = QGuiApplication::clipboard();
+  const auto previous = clipboard->text();
+  clipboard->setText("A copied line\ncontinues here.");
+  QMetaObject::invokeMethod(input, "returnPressed", Qt::DirectConnection);
+  QElapsedTimer timer;
+  timer.start();
+  while (RecentItemsStore(DefaultRecentItemsPath()).load().empty() &&
+         timer.elapsed() < 1000) {
+    QCoreApplication::processEvents();
+    QThread::msleep(10);
+  }
+  const auto actual = clipboard->text();
+  const auto recent = RecentItemsStore(DefaultRecentItemsPath()).load();
+  clipboard->setText(previous);
+  ResetRecentCache();
+  ASSERT_EQ(QString("A copied line continues here."), actual);
+  ASSERT_EQ(std::size_t(1), recent.size());
+  ASSERT_EQ(QString("My custom filter"), recent[0].name);
+  ASSERT_TRUE(!window.isVisible());
+}
+#endif
+
+TEST(MainWindowTest, UnknownPluginFunctionDoesNotRecordRecentUse) {
+  ResetRecentCache();
+  MainWindow window(nullptr, false);
+  StringItem item;
+  item.name = "Unknown function";
+  item.type = "plugin";
+  item.keywords = {"unknown-alias"};
+  item.payload = PluginPayload{"clipboard-filter", "missing"};
+  window.setItems({item});
+  auto *input = window.findChild<QLineEdit *>("searchInput");
+  input->setText("unknown-alias");
+  QMetaObject::invokeMethod(input, "returnPressed", Qt::DirectConnection);
+  QCoreApplication::processEvents();
+  ASSERT_TRUE(RecentItemsStore(DefaultRecentItemsPath()).load().empty());
   ResetRecentCache();
 }
 
