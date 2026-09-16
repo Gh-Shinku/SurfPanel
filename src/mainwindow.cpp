@@ -7,6 +7,7 @@
 #include "palette_search_input.h"
 #include "plugin/builtin_plugins.h"
 #include "search_result_view.h"
+#include "tray_menu.h"
 #include "window_effects.h"
 #include <QCursor>
 #include <QLabel>
@@ -474,40 +475,9 @@ QColor MainWindow::querySystemAccentColor() const {
 }
 
 void MainWindow::applyTrayMenuTheme() {
-  if (!trayMenu_) {
-    return;
+  if (trayMenu_) {
+    static_cast<TrayMenu *>(trayMenu_)->setDarkMode(isDarkMode_);
   }
-  // Keep the traditional menu layout; only colors follow the resolved theme.
-  trayMenu_->setStyleSheet(QString(R"(
-    QMenu {
-      background: %1;
-      color: %2;
-      border: 1px solid %3;
-      border-radius: 5px;
-      padding: 4px 0;
-      font-family: "Segoe UI";
-      font-size: 14px;
-    }
-    QMenu::item {
-      padding: 5px 24px 5px 24px;
-      margin: 0 3px;
-      border-radius: 3px;
-    }
-    QMenu::item:selected { background: %4; color: %2; }
-    QMenu::item:default { font-weight: bold; }
-    QMenu::item:disabled { color: %5; }
-    QMenu::separator {
-      height: 1px;
-      background: %6;
-      margin: 4px 8px;
-    }
-  )")
-                               .arg(isDarkMode_ ? "#202020" : "#F9F9F9")
-                               .arg(isDarkMode_ ? "#F1F1F1" : "#202020")
-                               .arg(isDarkMode_ ? "#454545" : "#DEDEDE")
-                               .arg(isDarkMode_ ? "#353535" : "#EAEAEA")
-                               .arg(isDarkMode_ ? "#888888" : "#909090")
-                               .arg(isDarkMode_ ? "#3C3C3C" : "#E4E4E4"));
 }
 
 void MainWindow::setupTrayIcon() {
@@ -516,7 +486,7 @@ void MainWindow::setupTrayIcon() {
     return;
   }
 
-  trayMenu_ = new QMenu(this);
+  trayMenu_ = new TrayMenu(this);
   trayMenu_->setObjectName("trayMenu");
   applyTrayMenuTheme();
   showPanelAction_ = trayMenu_->addAction("Show Panel");

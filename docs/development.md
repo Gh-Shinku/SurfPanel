@@ -56,6 +56,11 @@ and run `test_mainwindow` through CTest. It exports light/dark native and fallba
 previews; normal test runs do not capture the desktop.
 
 The same opt-in exports `readme-light.png`, `readme-dark.png`, and `tray.png`.
+The tray uses the Windows system menu font (or the platform system font) and
+compact spacing. Checkmarks are painted independently of the Qt style so their
+size and contrast remain consistent across DPI and themes. Checked-state previews
+are exported as `tray-checked.png`, `tray-light-checked.png`, and
+`tray-dark-checked.png` without modifying Windows startup settings.
 The README palette previews use widget capture with the fallback surface so they
 can be reproduced without a capturable desktop; native DWM effects are excluded.
 Copy the reviewed previews to `assets/SurfPanel.png`, `assets/SurfPanel-dark.png`,

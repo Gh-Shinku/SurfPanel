@@ -49,6 +49,10 @@ UI 验证可设置 `SURFPANEL_UI_CAPTURE_DIR` 为构建产物目录，再通过 
 `test_mainwindow`，导出深浅主题的原生与 fallback 预览；常规测试不会截图。
 
 同时导出 `readme-light.png`、`readme-dark.png` 和 `tray.png`。
+托盘菜单使用 Windows 系统菜单字体（其他平台使用系统字体）和紧凑间距。
+勾选标记独立于 Qt 样式绘制，确保不同 DPI 和主题下大小、对比度一致。
+`tray-checked.png`、`tray-light-checked.png` 和 `tray-dark-checked.png`
+展示勾选状态，截图过程不会修改 Windows 自启动设置。
 README 面板展示图使用回退外观和窗口自身渲染，不依赖可截图的桌面会话，
 也不包含 DWM 原生效果。检查后可分别复制到 `assets/SurfPanel.png`、
 `assets/SurfPanel-dark.png` 和 `assets/tray.png` 来更新 README 图像。

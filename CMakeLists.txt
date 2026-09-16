@@ -88,6 +88,8 @@ target_link_libraries(surfpanel_clipboard_plugin
 add_library(SurfPanel::ClipboardPlugin ALIAS surfpanel_clipboard_plugin)
 
 add_library(surfpanel_ui STATIC
+  src/tray_menu.cpp
+  src/tray_menu.h
   src/window_effects.cpp
   src/window_effects.h
   src/palette_search_input.cpp

@@ -6,6 +6,7 @@
 #include "recent_items_store.h"
 #include "search_result_view.h"
 #include "test_harness.h"
+#include "tray_menu.h"
 
 #include <QAbstractItemModel>
 #include <QAction>
@@ -14,6 +15,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QFontMetrics>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
@@ -22,6 +24,7 @@
 #include <QMetaObject>
 #include <QPropertyAnimation>
 #include <QScreen>
+#include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QStyleHints>
 #include <QSystemTrayIcon>
@@ -99,15 +102,60 @@ TEST(MainWindowTest, TrayMenuUsesLightDesktopAppearance) {
   }
   ASSERT_TRUE(menu->styleSheet().contains(
       window.property("darkMode").toBool() ? "#F1F1F1" : "#F9F9F9"));
-  ASSERT_TRUE(menu->styleSheet().contains("border-radius: 5px"));
+  ASSERT_TRUE(menu->styleSheet().contains("border-radius: 4px"));
+  ASSERT_TRUE(!menu->styleSheet().contains("font-size:"));
+  ASSERT_TRUE(menu->font().pointSizeF() > 0);
   const QString directory = qEnvironmentVariable("SURFPANEL_UI_CAPTURE_DIR");
   if (!directory.isEmpty()) {
     QDir().mkpath(directory);
     menu->popup(QGuiApplication::primaryScreen()->availableGeometry().center());
     QCoreApplication::processEvents();
     const bool saved = menu->grab().save(directory + "/tray.png");
+    auto *startup = menu->actions()[3];
+    const bool previousChecked = startup->isChecked();
+    bool checkedSaved = false;
+    {
+      // Preview the check without changing the user's startup registry setting.
+      QSignalBlocker blocker(startup);
+      startup->setChecked(true);
+      QCoreApplication::processEvents();
+      checkedSaved = menu->grab().save(directory + "/tray-checked.png");
+      startup->setChecked(previousChecked);
+    }
     menu->hide();
     ASSERT_TRUE(saved);
+    ASSERT_TRUE(checkedSaved);
+  }
+}
+
+TEST(MainWindowTest, CompactTrayCheckmarksRenderInBothThemes) {
+  TrayMenu menu;
+  menu.addAction("Open");
+  auto *checkable = menu.addAction("Start with Windows");
+  checkable->setCheckable(true);
+  menu.ensurePolished();
+  menu.resize(menu.sizeHint());
+  const QRect row = menu.actionGeometry(checkable);
+  ASSERT_TRUE(row.height() <= QFontMetrics(menu.font()).height() + 8);
+  for (bool dark : {false, true}) {
+    menu.setDarkMode(dark);
+    checkable->setChecked(false);
+    const auto unchecked = menu.grab();
+    checkable->setChecked(true);
+    const auto checked = menu.grab();
+    ASSERT_EQ(unchecked.size(), checked.size());
+    const qreal scale = checked.devicePixelRatioF();
+    const QRect indicator(qRound((row.left() + 4) * scale),
+                          qRound(row.top() * scale), qRound(20 * scale),
+                          qRound(row.height() * scale));
+    ASSERT_TRUE(unchecked.toImage().copy(indicator) !=
+                checked.toImage().copy(indicator));
+    const QString directory = qEnvironmentVariable("SURFPANEL_UI_CAPTURE_DIR");
+    if (!directory.isEmpty()) {
+      QDir().mkpath(directory);
+      ASSERT_TRUE(checked.save(directory + (dark ? "/tray-dark-checked.png"
+                                                 : "/tray-light-checked.png")));
+    }
   }
 }
 
