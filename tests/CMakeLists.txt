@@ -1,6 +1,9 @@
 add_executable(test_config test_config.cpp)
 target_link_libraries(test_config PRIVATE SurfPanel::Core)
 
+add_executable(test_config_watcher test_config_watcher.cpp)
+target_link_libraries(test_config_watcher PRIVATE SurfPanel::Core)
+
 add_executable(test_clipboard_filter test_clipboard_filter.cpp)
 target_link_libraries(test_clipboard_filter
   PRIVATE
@@ -27,6 +30,7 @@ add_executable(test_mainwindow test_mainwindow.cpp)
 target_link_libraries(test_mainwindow PRIVATE SurfPanel::Ui)
 
 add_test(NAME test_config COMMAND test_config)
+add_test(NAME test_config_watcher COMMAND test_config_watcher)
 add_test(NAME test_clipboard_filter COMMAND test_clipboard_filter)
 add_test(NAME test_plugin_manager COMMAND test_plugin_manager)
 add_test(NAME test_search_engine COMMAND test_search_engine)
@@ -42,6 +46,7 @@ if(WIN32)
   string(REPLACE ";" "\\;" TEST_RUNTIME_PATH "${TEST_RUNTIME_PATH}")
   set_tests_properties(
     test_config
+    test_config_watcher
     test_clipboard_filter
     test_plugin_manager
     test_search_engine

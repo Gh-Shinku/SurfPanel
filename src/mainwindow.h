@@ -21,6 +21,7 @@ class QListView;
 class QLabel;
 class QStackedWidget;
 class QMenu;
+class ConfigWatcher;
 class QModelIndex;
 class QShortcut;
 class QSystemTrayIcon;
@@ -89,6 +90,7 @@ private:
   QRect activeScreenGeometry_;
   QPropertyAnimation *showAnimation_ = nullptr;
   QTimer *themeRefreshTimer_ = nullptr;
+  ConfigWatcher *configWatcher_ = nullptr;
   QPoint showTarget_;
   QColor accentColor_;
   bool isDarkMode_;
@@ -97,7 +99,6 @@ private:
   QMenu *trayMenu_;
   QAction *showPanelAction_;
   QAction *showConfigDirAction_;
-  QAction *reloadConfigAction_;
   QAction *autoStartAction_;
   QAction *exitAction_;
 

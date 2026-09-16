@@ -49,6 +49,8 @@ add_library(surfpanel_core STATIC
   src/atomic_file.h
   src/config.cpp
   src/config.h
+  src/config_watcher.cpp
+  src/config_watcher.h
   src/item.h
   src/recent_items_store.cpp
   src/recent_items_store.h

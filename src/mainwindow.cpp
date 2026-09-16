@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 
 #include "config.h"
+#include "config_watcher.h"
 #include "fluent_panel.h"
 #include "palette_geometry.h"
 #include "palette_search_input.h"
@@ -18,6 +19,7 @@
 #include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QEvent>
 #include <QFile>
 #include <QGuiApplication>
@@ -136,9 +138,9 @@ MainWindow::MainWindow(QWidget *parent, bool enableHotkey,
       resultsModel_(nullptr), resultsDelegate_(nullptr), panel_(nullptr),
       accentColor_(QColor("#005FB8")), isDarkMode_(false), trayIcon_(nullptr),
       trayMenu_(nullptr), showPanelAction_(nullptr),
-      showConfigDirAction_(nullptr), reloadConfigAction_(nullptr),
-      autoStartAction_(nullptr), exitAction_(nullptr),
-      globalHotkeyRegistered_(false), hotkeyId_(1), fallbackShortcut_(nullptr) {
+      showConfigDirAction_(nullptr), autoStartAction_(nullptr),
+      exitAction_(nullptr), globalHotkeyRegistered_(false), hotkeyId_(1),
+      fallbackShortcut_(nullptr) {
   nativeFrame_ = preferNativeBackdrop && SupportsNativeBackdrop();
   RegisterDefaultActions(&actionManager_);
   if (!RegisterBuiltinPlugins(&pluginManager_)) {
@@ -501,7 +503,6 @@ void MainWindow::setupTrayIcon() {
   showPanelAction_ = trayMenu_->addAction("Show Panel");
   trayMenu_->setDefaultAction(showPanelAction_);
   showConfigDirAction_ = trayMenu_->addAction("Show Config File Dir");
-  reloadConfigAction_ = trayMenu_->addAction("Reload Config");
   trayMenu_->addSeparator();
   autoStartAction_ = trayMenu_->addAction("Start with Windows");
   autoStartAction_->setCheckable(true);
@@ -511,8 +512,6 @@ void MainWindow::setupTrayIcon() {
   connect(showPanelAction_, &QAction::triggered, this, &MainWindow::showPanel);
   connect(showConfigDirAction_, &QAction::triggered, this,
           &MainWindow::openConfigDirectory);
-  connect(reloadConfigAction_, &QAction::triggered, this,
-          &MainWindow::reloadConfig);
   connect(autoStartAction_, &QAction::toggled, this,
           &MainWindow::setAutoStartEnabled);
   connect(trayMenu_, &QMenu::aboutToShow, this,
@@ -543,6 +542,9 @@ void MainWindow::setupTrayIcon() {
 }
 
 void MainWindow::setupConnections() {
+  configWatcher_ = new ConfigWatcher(this);
+  connect(configWatcher_, &ConfigWatcher::configurationChanged, this,
+          &MainWindow::reloadConfig);
   themeRefreshTimer_ = new QTimer(this);
   themeRefreshTimer_->setSingleShot(true);
   connect(themeRefreshTimer_, &QTimer::timeout, this, &MainWindow::updateTheme);
@@ -619,8 +621,14 @@ ConfigLoadResult MainWindow::loadBackendItems() {
     ConfigLoadResult result;
     result.searchPrefixes = DefaultSearchPrefixes();
     result.ok = false;
-    result.message = "Config directory not found.";
+    result.message = "Cannot initialize user configuration directory.";
+    qCritical().noquote() << QString::fromStdString(result.message);
     return result;
+  }
+
+  if (configWatcher_ && !configWatcher_->isWatching()) {
+    const QString root = QString::fromUtf8(configRoot->u8string().c_str());
+    configWatcher_->start(root);
   }
 
   auto result = LoadConfigWithFallback(*configRoot);
@@ -637,7 +645,11 @@ ConfigLoadResult MainWindow::loadBackendItems() {
   actionManager_.setVariableSettings(result.variableSettings);
   onQueryTextChanged(input_->text());
 
-  if (!result.ok || result.usedFallback) {
+  qInfo() << "Configuration loaded:"
+          << QString::fromUtf8(configRoot->u8string().c_str())
+          << "items=" << result.items.size() << "ok=" << result.ok
+          << "fallback=" << result.usedFallback;
+  if (!result.message.empty()) {
     qWarning() << "Config load warning:"
                << QString::fromStdString(result.message);
   }
@@ -700,7 +712,18 @@ void MainWindow::hidePanel(bool clearPasteTarget) {
 }
 
 void MainWindow::reloadConfig() {
+  QElapsedTimer timer;
+  timer.start();
+  qInfo() << "Reloading configuration automatically";
   const auto result = loadBackendItems();
+  qInfo() << "Configuration reload finished: ok=" << result.ok
+          << "fallback=" << result.usedFallback
+          << "items=" << result.items.size()
+          << "elapsed ms=" << timer.elapsed();
+  if (!result.message.empty()) {
+    qWarning().noquote() << "Configuration diagnostics:"
+                         << QString::fromStdString(result.message);
+  }
   if (trayIcon_ == nullptr || result.message.empty()) {
     return;
   }

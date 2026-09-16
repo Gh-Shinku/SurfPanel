@@ -88,8 +88,11 @@ TEST(MainWindowTest, TrayMenuUsesLightDesktopAppearance) {
   }
   ASSERT_NE(nullptr, menu);
   ASSERT_EQ(QString("Show Panel"), menu->defaultAction()->text());
-  ASSERT_TRUE(menu->actions()[3]->isSeparator());
-  ASSERT_TRUE(menu->actions()[4]->isCheckable());
+  ASSERT_TRUE(menu->actions()[2]->isSeparator());
+  ASSERT_TRUE(menu->actions()[3]->isCheckable());
+  for (auto *action : menu->actions()) {
+    ASSERT_TRUE(action->text() != "Reload Config");
+  }
   ASSERT_TRUE(menu->styleSheet().contains("#F9F9F9"));
   ASSERT_TRUE(menu->styleSheet().contains("border-radius: 5px"));
   const QString directory = qEnvironmentVariable("SURFPANEL_UI_CAPTURE_DIR");
