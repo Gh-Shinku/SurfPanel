@@ -16,6 +16,22 @@
 
 namespace {
 
+#ifdef Q_OS_WIN
+// True only when the window belongs to another process. SurfPanel's own
+// windows (palette, tray menu, tooltips) must never receive the injected
+// keystrokes, and there is no target to paste into without a foreground
+// window at all.
+bool HasExternalForegroundWindow(HWND window) {
+  if (window == nullptr) {
+    return false;
+  }
+
+  DWORD processId = 0;
+  GetWindowThreadProcessId(window, &processId);
+  return processId != 0 && processId != GetCurrentProcessId();
+}
+#endif
+
 bool TryInvokeInsertMethod(QObject *target, const char *signature,
                            const char *methodName, const QString &text) {
   const QMetaObject *metaObject = target->metaObject();
@@ -89,9 +105,24 @@ bool DefaultActionContext::copyToClipboard(const QString &text) {
 bool DefaultActionContext::injectIntoActiveInput(const QString &text) {
 #ifdef Q_OS_WIN
   if (nativePasteTarget_ != nullptr) {
-    const HWND target = static_cast<HWND>(nativePasteTarget_);
-    if (GetForegroundWindow() != target) {
+    // The palette hides before the action runs, so the paste has to go to
+    // whichever window owns the foreground now. The window captured when the
+    // palette opened is only a reference for the log: Windows hands the
+    // foreground back to arbitrary windows (and to the shell when the palette
+    // was opened from the tray), so requiring an exact match would veto
+    // working pastes.
+    const HWND captured = static_cast<HWND>(nativePasteTarget_);
+    const HWND foreground = GetForegroundWindow();
+    if (!HasExternalForegroundWindow(foreground)) {
+      qWarning() << "No external foreground window to paste into: captured="
+                 << static_cast<void *>(captured)
+                 << "foreground=" << static_cast<void *>(foreground);
       return false;
+    }
+    if (foreground != captured) {
+      qInfo() << "Paste target changed since the palette opened: captured="
+              << static_cast<void *>(captured)
+              << "foreground=" << static_cast<void *>(foreground);
     }
 
     INPUT inputs[4] = {};
@@ -105,7 +136,15 @@ bool DefaultActionContext::injectIntoActiveInput(const QString &text) {
     inputs[3].type = INPUT_KEYBOARD;
     inputs[3].ki.wVk = VK_CONTROL;
     inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
-    return SendInput(4, inputs, sizeof(INPUT)) == 4;
+    const UINT injected = SendInput(4, inputs, sizeof(INPUT));
+    const DWORD sendError = injected == 4 ? 0 : GetLastError();
+    if (injected != 4) {
+      qWarning() << "SendInput was rejected: injected=" << injected
+                 << "lastError=" << sendError
+                 << "foreground=" << static_cast<void *>(foreground);
+      return false;
+    }
+    return true;
   }
 #endif
 
