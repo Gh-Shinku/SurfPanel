@@ -11,10 +11,10 @@ New installations start with an empty `items.toml` (`items = []`), without
 example actions, imports, or enabled plugins. Add the examples below yourself.
 More optional examples are under [examples/](examples/README.md).
 SurfPanel reads and writes its user configuration directory under Qt's per-user
-`AppConfigLocation` for SurfPanel. Application updates never overwrite this
-directory, and the installer keeps existing executable-adjacent configuration
-without a reset prompt. Legacy executable-adjacent configuration is copied into
-the user directory only when that user directory does not yet exist.
+`AppConfigLocation` for SurfPanel. The installer neither deploys nor removes
+files in this directory. During an upgrade, legacy executable-adjacent config
+files are migrated when their destination is missing; an existing user config
+file always wins and is never overwritten.
 
 ### Directory Layout
 

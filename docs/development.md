@@ -28,8 +28,10 @@ Setup 6 location by default; set `SURFPANEL_ISCC` to the full path of
 
 The installer performs in-place upgrades using the stable Inno Setup `AppId`.
 If SurfPanel is running, Setup closes the daemon silently before replacing its
-files. After both a fresh install and an upgrade, the Finish page offers to
-launch SurfPanel, with the option selected by default.
+files. Configuration is not installer-owned; upgrades migrate only missing
+files from the legacy executable-adjacent config directory into the canonical
+per-user directory. After both a fresh install and an upgrade, the Finish page
+offers to launch SurfPanel, with the option selected by default.
 
 ## Source Layout
 

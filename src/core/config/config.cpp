@@ -664,8 +664,8 @@ std::optional<fs::path> FindConfigRoot() {
   const fs::path userConfig = UserConfigRoot();
   std::error_code ec;
   // Migrate legacy executable-adjacent configuration on first user launch.
-  // New installations ship only an empty items.toml; existing user directories
-  // are never copied into, reseeded, or overwritten.
+  // Current installers do not own configuration files; existing user
+  // directories are never copied into, reseeded, or overwritten here.
   if (!fs::exists(userConfig, ec)) {
     if (const auto bundled = FindBundledConfigRoot()) {
       return CopyBundledConfig(*bundled, userConfig)
