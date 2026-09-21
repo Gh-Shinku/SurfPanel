@@ -155,6 +155,26 @@ TEST(MainWindowTest, AboutDialogShowsBuildAndOpenSourceInformation) {
   ASSERT_TRUE(software->text().contains("toml11"));
   ASSERT_TRUE(software->text().contains("Inno Setup"));
   ASSERT_TRUE(license->text().contains("GNU Lesser General Public License"));
+
+  dialog.setDarkMode(false);
+  ASSERT_TRUE(dialog.styleSheet().contains("#1F1F1F"));
+  ASSERT_TRUE(version->styleSheet().contains("#1F1F1F"));
+  dialog.setDarkMode(true);
+  ASSERT_TRUE(dialog.styleSheet().contains("#F5F5F5"));
+  ASSERT_TRUE(version->styleSheet().contains("#F5F5F5"));
+
+  const QString directory = qEnvironmentVariable("SURFPANEL_UI_CAPTURE_DIR");
+  if (!directory.isEmpty()) {
+    QDir().mkpath(directory);
+    for (bool dark : {false, true}) {
+      dialog.setDarkMode(dark);
+      dialog.show();
+      QCoreApplication::processEvents();
+      ASSERT_TRUE(dialog.grab().save(
+          directory + (dark ? "/about-dark.png" : "/about-light.png")));
+    }
+    dialog.close();
+  }
 }
 
 TEST(MainWindowTest, TrayAboutActionOpensDialog) {

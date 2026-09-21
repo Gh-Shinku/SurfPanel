@@ -41,17 +41,32 @@ bool ApplyNativeBackdrop(WId window, bool darkMode) {
     return false;
   }
   HWND hwnd = reinterpret_cast<HWND>(window);
-  const BOOL dark = darkMode;
   const int corners = DWMWCP_ROUNDSMALL;
   const int backdrop = DWMSBT_TRANSIENTWINDOW;
   const MARGINS margins{-1, -1, -1, -1};
   auto &api = Api();
-  api.setAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
+  ApplyNativeWindowTheme(window, darkMode);
   api.setAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corners,
                    sizeof(corners));
   return SUCCEEDED(api.extendFrame(hwnd, &margins)) &&
          SUCCEEDED(api.setAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop,
                                     sizeof(backdrop)));
+#else
+  Q_UNUSED(window);
+  Q_UNUSED(darkMode);
+  return false;
+#endif
+}
+
+bool ApplyNativeWindowTheme(WId window, bool darkMode) {
+#ifdef Q_OS_WIN
+  if (!window || !Api().setAttribute) {
+    return false;
+  }
+  const BOOL dark = darkMode;
+  return SUCCEEDED(Api().setAttribute(reinterpret_cast<HWND>(window),
+                                      DWMWA_USE_IMMERSIVE_DARK_MODE, &dark,
+                                      sizeof(dark)));
 #else
   Q_UNUSED(window);
   Q_UNUSED(darkMode);
