@@ -2,20 +2,13 @@
 
 #include <QDialog>
 
-class QLabel;
-class QShowEvent;
+class QWidget;
 
 class AboutDialog final : public QDialog {
 public:
   explicit AboutDialog(QWidget *parent = nullptr);
   void setDarkMode(bool dark);
 
-protected:
-  void showEvent(QShowEvent *event) override;
-
 private:
-  void updateIconPixmap();
-
-  QLabel *icon_ = nullptr;
-  bool screenChangeConnected_ = false;
+  QWidget *content_ = nullptr;
 };

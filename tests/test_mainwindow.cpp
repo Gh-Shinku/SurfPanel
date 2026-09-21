@@ -138,30 +138,29 @@ TEST(MainWindowTest, TrayMenuUsesLightDesktopAppearance) {
 TEST(MainWindowTest, AboutDialogShowsBuildAndOpenSourceInformation) {
   AboutDialog dialog;
 
-  auto *version = dialog.findChild<QLabel *>("aboutVersion");
-  auto *build = dialog.findChild<QLabel *>("aboutBuild");
-  auto *github = dialog.findChild<QLabel *>("aboutGithub");
-  auto *software = dialog.findChild<QLabel *>("aboutOpenSource");
-  auto *license = dialog.findChild<QLabel *>("aboutLicense");
+  auto *content = dialog.findChild<QWidget *>("aboutContent");
 
-  ASSERT_NE(nullptr, version);
-  ASSERT_NE(nullptr, build);
-  ASSERT_NE(nullptr, github);
-  ASSERT_NE(nullptr, software);
-  ASSERT_NE(nullptr, license);
-  ASSERT_TRUE(version->text().contains(SURFPANEL_VERSION));
-  ASSERT_TRUE(build->text().contains("Qt"));
-  ASSERT_TRUE(github->text().contains("github.com/shinku/SurfPanel"));
-  ASSERT_TRUE(software->text().contains("toml11"));
-  ASSERT_TRUE(software->text().contains("Inno Setup"));
-  ASSERT_TRUE(license->text().contains("GNU Lesser General Public License"));
+  ASSERT_NE(nullptr, content);
+  ASSERT_TRUE(
+      content->property("versionText").toString().contains(SURFPANEL_VERSION));
+  ASSERT_TRUE(content->property("buildText").toString().contains("Qt"));
+  ASSERT_TRUE(content->property("githubUrl")
+                  .toString()
+                  .contains("github.com/shinku/SurfPanel"));
+  ASSERT_TRUE(
+      content->property("openSourceText").toString().contains("toml11"));
+  ASSERT_TRUE(
+      content->property("openSourceText").toString().contains("Inno Setup"));
+  ASSERT_TRUE(content->property("licenseText")
+                  .toString()
+                  .contains("GNU Lesser General Public License"));
+  ASSERT_EQ(QString("QPainter"), content->property("renderingMode").toString());
+  ASSERT_EQ(14, content->property("bodyPixelSize").toInt());
 
   dialog.setDarkMode(false);
   ASSERT_TRUE(dialog.styleSheet().contains("#1F1F1F"));
-  ASSERT_TRUE(version->styleSheet().contains("#1F1F1F"));
   dialog.setDarkMode(true);
   ASSERT_TRUE(dialog.styleSheet().contains("#F5F5F5"));
-  ASSERT_TRUE(version->styleSheet().contains("#F5F5F5"));
 
   const QString directory = qEnvironmentVariable("SURFPANEL_UI_CAPTURE_DIR");
   if (!directory.isEmpty()) {
