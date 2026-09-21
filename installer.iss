@@ -3,7 +3,7 @@
 #define MyAppName "SurfPanel"
 #define MyAppVersion "0.1.0"
 #define MyAppPublisher "Shinku"
-#define MyAppURL "https://github.com/shinku/SurfPanel"
+#define MyAppURL "https://github.com/Gh-Shinku/SurfPanel"
 #define MyAppExeName "SurfPanel.exe"
 #define MyAppId "{{4D2F8EC0-8A04-43EF-B8C8-D8F847A16D96}}"
 #define MyProjectRoot SourcePath

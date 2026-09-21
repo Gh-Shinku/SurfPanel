@@ -16,7 +16,7 @@
 
 namespace {
 
-constexpr auto kGithubUrl = "https://github.com/shinku/SurfPanel";
+constexpr auto kGithubUrl = "https://github.com/Gh-Shinku/SurfPanel";
 constexpr auto kLicenseUrl = "https://www.gnu.org/licenses/lgpl-3.0.html";
 
 QFont UiFont(int pixelSize, QFont::Weight weight = QFont::Normal) {
@@ -106,8 +106,9 @@ protected:
     const QString githubPrefix = "Source code and issue tracker: ";
     painter.drawText(QPointF(0, 146), githubPrefix);
     const int githubX = QFontMetrics(bodyFont).horizontalAdvance(githubPrefix);
-    githubLinkRect_ = drawLink(&painter, QPoint(githubX, 146),
-                               "github.com/shinku/SurfPanel", link, bodyFont);
+    githubLinkRect_ =
+        drawLink(&painter, QPoint(githubX, 146),
+                 "github.com/Gh-Shinku/SurfPanel", link, bodyFont);
 
     painter.setPen(dark_ ? QColor("#666666") : QColor("#8A8A8A"));
     painter.drawLine(QPointF(0, 171.5), QPointF(width(), 171.5));

@@ -146,7 +146,7 @@ TEST(MainWindowTest, AboutDialogShowsBuildAndOpenSourceInformation) {
   ASSERT_TRUE(content->property("buildText").toString().contains("Qt"));
   ASSERT_TRUE(content->property("githubUrl")
                   .toString()
-                  .contains("github.com/shinku/SurfPanel"));
+                  .contains("github.com/Gh-Shinku/SurfPanel"));
   ASSERT_TRUE(
       content->property("openSourceText").toString().contains("toml11"));
   ASSERT_TRUE(
