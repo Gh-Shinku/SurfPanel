@@ -30,6 +30,8 @@ public:
   bool openUrlInDefaultBrowser(const QUrl &url) override;
   bool copyToClipboard(const QString &text) override;
   bool injectIntoActiveInput(const QString &text) override;
+  void clearLastError();
+  const QString &lastError() const;
 
 #ifdef Q_OS_WIN
   void setNativePasteTarget(void *window);
@@ -37,6 +39,7 @@ public:
 #endif
 
 private:
+  QString lastError_;
 #ifdef Q_OS_WIN
   void *nativePasteTarget_ = nullptr;
 #endif

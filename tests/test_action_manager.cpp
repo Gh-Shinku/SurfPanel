@@ -1,7 +1,7 @@
 #include "action_manager.h"
 #include "test_harness.h"
-#include <QRegularExpression>
 #include <QObject>
+#include <QRegularExpression>
 #include <QString>
 #include <QVariant>
 
@@ -139,6 +139,20 @@ TEST(ActionManagerTest, InjectActionFailsIfInputInjectionFails) {
 
   ASSERT_EQ(1, context.clipboardCallCount);
   ASSERT_EQ(1, context.injectCallCount);
+}
+
+TEST(ActionManagerTest, InjectActionDoesNotPasteWhenClipboardWriteFails) {
+  ActionManager manager;
+  FakeActionContext context;
+  context.clipboardResult = false;
+
+  ASSERT_TRUE(manager.registerAction(ActionManager::kInjectContentAction,
+                                     std::make_unique<InjectContentAction>()));
+  ASSERT_TRUE(
+      !manager.invoke(ActionManager::kInjectContentAction, "content", context));
+
+  ASSERT_EQ(1, context.clipboardCallCount);
+  ASSERT_EQ(0, context.injectCallCount);
 }
 
 TEST(ActionManagerTest, RegisterDefaultActionsAddsBothActions) {

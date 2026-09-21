@@ -995,16 +995,20 @@ void MainWindow::invokeItemAction(const StringItem *item) {
     }
   };
   QTimer::singleShot(
-      0, this,
+      30, this,
       [this, actionName, payload, itemPayload, pluginAction, finish]() {
         if (pluginAction) {
           const auto &target = std::get<PluginPayload>(itemPayload);
           pluginManager_.invokeFunction(target.plugin, target.function, finish);
         } else {
+          actionContext_.clearLastError();
           const bool succeeded =
               actionManager_.invoke(actionName, payload, actionContext_);
-          finish(
-              {succeeded, succeeded ? QString() : "Failed to invoke action."});
+          QString message = actionContext_.lastError();
+          if (!succeeded && message.isEmpty()) {
+            message = "Failed to invoke action.";
+          }
+          finish({succeeded, message});
         }
       });
 }

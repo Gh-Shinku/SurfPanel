@@ -1,6 +1,7 @@
 #include "action_manager.h"
 #include "variable_resolver.h"
 #include <QClipboard>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QGuiApplication>
 #include <QMetaObject>
@@ -9,6 +10,7 @@
 #include <QString>
 #include <QUrl>
 #include <QVariant>
+#include <algorithm>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -29,6 +31,94 @@ bool HasExternalForegroundWindow(HWND window) {
   DWORD processId = 0;
   GetWindowThreadProcessId(window, &processId);
   return processId != 0 && processId != GetCurrentProcessId();
+}
+
+bool WriteUnicodeClipboardText(const QString &text, QString *error) {
+  constexpr int kAttempts = 6;
+  for (int attempt = 0; attempt < kAttempts; ++attempt) {
+    if (!OpenClipboard(nullptr)) {
+      const DWORD code = GetLastError();
+      if (attempt + 1 == kAttempts) {
+        *error =
+            QString("Clipboard is busy after %1 attempts (Windows error %2).")
+                .arg(kAttempts)
+                .arg(code);
+        return false;
+      }
+      Sleep(10);
+      continue;
+    }
+
+    const std::wstring utf16 = text.toStdWString();
+    const SIZE_T bytes = (utf16.size() + 1) * sizeof(wchar_t);
+    HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (memory == nullptr) {
+      const DWORD code = GetLastError();
+      CloseClipboard();
+      *error = QString("Cannot allocate clipboard memory (Windows error %1).")
+                   .arg(code);
+      return false;
+    }
+    auto *destination = static_cast<wchar_t *>(GlobalLock(memory));
+    if (destination == nullptr) {
+      const DWORD code = GetLastError();
+      GlobalFree(memory);
+      CloseClipboard();
+      *error = QString("Cannot access clipboard memory (Windows error %1).")
+                   .arg(code);
+      return false;
+    }
+    std::copy(utf16.cbegin(), utf16.cend(), destination);
+    destination[utf16.size()] = L'\0';
+    GlobalUnlock(memory);
+
+    if (!EmptyClipboard() ||
+        SetClipboardData(CF_UNICODETEXT, memory) == nullptr) {
+      const DWORD code = GetLastError();
+      GlobalFree(memory);
+      CloseClipboard();
+      *error =
+          QString("Cannot write Unicode clipboard text (Windows error %1).")
+              .arg(code);
+      return false;
+    }
+    // The system owns memory after SetClipboardData succeeds.
+    CloseClipboard();
+    return true;
+  }
+  return false;
+}
+
+bool RestorePasteTarget(HWND target, QString *error) {
+  if (!IsWindow(target) || !HasExternalForegroundWindow(target)) {
+    *error = "The application active before SurfPanel opened is no longer "
+             "available.";
+    return false;
+  }
+  if (GetForegroundWindow() == target) {
+    return true;
+  }
+
+  const DWORD targetThread = GetWindowThreadProcessId(target, nullptr);
+  const DWORD currentThread = GetCurrentThreadId();
+  const bool attached = targetThread != 0 && targetThread != currentThread &&
+                        AttachThreadInput(currentThread, targetThread, TRUE);
+  const BOOL activated = SetForegroundWindow(target);
+  if (attached) {
+    AttachThreadInput(currentThread, targetThread, FALSE);
+  }
+  for (int attempt = 0; attempt < 10 && GetForegroundWindow() != target;
+       ++attempt) {
+    Sleep(10);
+  }
+  if (GetForegroundWindow() != target) {
+    *error = QString("Windows refused to restore the paste target (target=%1, "
+                     "SetForegroundWindow=%2).")
+                 .arg(reinterpret_cast<quintptr>(target), 0, 16)
+                 .arg(activated != FALSE);
+    return false;
+  }
+  return true;
 }
 #endif
 
@@ -89,17 +179,34 @@ bool InjectIntoInputObject(QObject *target, const QString &text) {
 }
 
 bool DefaultActionContext::openUrlInDefaultBrowser(const QUrl &url) {
-  return QDesktopServices::openUrl(url);
+  const bool opened = QDesktopServices::openUrl(url);
+  if (!opened) {
+    lastError_ = "The default browser rejected the URL.";
+  }
+  return opened;
 }
 
 bool DefaultActionContext::copyToClipboard(const QString &text) {
+#ifdef Q_OS_WIN
+  if (!WriteUnicodeClipboardText(text, &lastError_)) {
+    qWarning().noquote() << "Clipboard write failed:" << lastError_;
+    return false;
+  }
+  return true;
+#else
   QClipboard *clipboard = QGuiApplication::clipboard();
   if (clipboard == nullptr) {
+    lastError_ = "The system clipboard is unavailable.";
     return false;
   }
 
   clipboard->setText(text, QClipboard::Clipboard);
-  return clipboard->text(QClipboard::Clipboard) == text;
+  const bool written = clipboard->text(QClipboard::Clipboard) == text;
+  if (!written) {
+    lastError_ = "The clipboard did not retain the copied text.";
+  }
+  return written;
+#endif
 }
 
 bool DefaultActionContext::injectIntoActiveInput(const QString &text) {
@@ -112,13 +219,13 @@ bool DefaultActionContext::injectIntoActiveInput(const QString &text) {
     // was opened from the tray), so requiring an exact match would veto
     // working pastes.
     const HWND captured = static_cast<HWND>(nativePasteTarget_);
-    const HWND foreground = GetForegroundWindow();
-    if (!HasExternalForegroundWindow(foreground)) {
-      qWarning() << "No external foreground window to paste into: captured="
-                 << static_cast<void *>(captured)
-                 << "foreground=" << static_cast<void *>(foreground);
+    QString restoreError;
+    if (!RestorePasteTarget(captured, &restoreError)) {
+      lastError_ = "Text was copied, but " + restoreError;
+      qWarning().noquote() << "Paste target restoration failed:" << lastError_;
       return false;
     }
+    const HWND foreground = GetForegroundWindow();
     if (foreground != captured) {
       qInfo() << "Paste target changed since the palette opened: captured="
               << static_cast<void *>(captured)
@@ -142,6 +249,11 @@ bool DefaultActionContext::injectIntoActiveInput(const QString &text) {
       qWarning() << "SendInput was rejected: injected=" << injected
                  << "lastError=" << sendError
                  << "foreground=" << static_cast<void *>(foreground);
+      lastError_ = QString("Text was copied, but Windows rejected simulated "
+                           "Ctrl+V (injected %1 of 4 events, error %2). The "
+                           "target may be elevated.")
+                       .arg(injected)
+                       .arg(sendError);
       return false;
     }
     return true;
@@ -149,8 +261,17 @@ bool DefaultActionContext::injectIntoActiveInput(const QString &text) {
 #endif
 
   QObject *focus = QGuiApplication::focusObject();
-  return InjectIntoInputObject(focus, text);
+  const bool injected = InjectIntoInputObject(focus, text);
+  if (!injected) {
+    lastError_ =
+        "Text was copied, but no editable input is available for insertion.";
+  }
+  return injected;
 }
+
+void DefaultActionContext::clearLastError() { lastError_.clear(); }
+
+const QString &DefaultActionContext::lastError() const { return lastError_; }
 
 #ifdef Q_OS_WIN
 void DefaultActionContext::setNativePasteTarget(void *window) {
@@ -184,8 +305,7 @@ bool InjectContentAction::invoke(const QString &payload,
   }
 
   const bool clipboardOk = context.copyToClipboard(payload);
-  const bool inputOk = context.injectIntoActiveInput(payload);
-  return clipboardOk && inputOk;
+  return clipboardOk && context.injectIntoActiveInput(payload);
 }
 
 bool ActionManager::registerAction(const std::string &name,
