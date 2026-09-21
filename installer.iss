@@ -6,7 +6,6 @@
 #define MyAppURL "https://github.com/shinku/SurfPanel"
 #define MyAppExeName "SurfPanel.exe"
 #define MyAppId "{{4D2F8EC0-8A04-43EF-B8C8-D8F847A16D96}}"
-#define MyAppUninstallKey "Software\Microsoft\Windows\CurrentVersion\Uninstall\{4D2F8EC0-8A04-43EF-B8C8-D8F847A16D96}_is1"
 #define MyProjectRoot SourcePath
 #define MyMingwRoot GetEnv("SURFPANEL_MINGW_ROOT")
 #if MyMingwRoot == ""
@@ -46,7 +45,7 @@ VersionInfoCompany={#MyAppPublisher}
 WizardStyle=modern
 CloseApplications=yes
 CloseApplicationsFilter={#MyAppExeName}
-RestartApplications=yes
+RestartApplications=no
 UsePreviousAppDir=yes
 UsePreviousTasks=yes
 
@@ -108,24 +107,18 @@ Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\{#MyAppExeName}"
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent; Check: IsFreshInstall
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
-  UpgradeInstall: Boolean;
-
-function InitializeSetup(): Boolean;
-var
-  UninstallString: string;
+  ResultCode: Integer;
 begin
-  Result := True;
-  UpgradeInstall :=
-    RegQueryStringValue(HKCU, '{#MyAppUninstallKey}', 'UninstallString', UninstallString) or
-    RegQueryStringValue(HKLM, '{#MyAppUninstallKey}', 'UninstallString', UninstallString) or
-    FileExists(ExpandConstant('{autopf}\{#MyAppName}\unins000.exe'));
-end;
-
-function IsFreshInstall(): Boolean;
-begin
-  Result := not UpgradeInstall;
+  { SurfPanel is a background daemon with no unsaved documents. Stop every
+    running instance before Restart Manager scans files so upgrades proceed
+    without an application-closing confirmation page. }
+  Exec(ExpandConstant('{sys}\taskkill.exe'),
+    '/F /IM "{#MyAppExeName}"', '', SW_HIDE, ewWaitUntilTerminated,
+    ResultCode);
+  Result := '';
 end;

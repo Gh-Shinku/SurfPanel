@@ -26,9 +26,8 @@ $env:SURFPANEL_QT_ROOT = "C:\Qt\6.8.0\mingw_64"
 的完整路径。
 
 安装程序通过稳定的 Inno Setup `AppId` 执行原地升级。若 SurfPanel 正在运行，
-Windows Restart Manager 会在“准备安装”页面列出它，并允许在替换文件前自动
-关闭；升级完成后会由 Restart Manager 重新启动守护程序。全新安装则会在完成
-页面提供启动选项。
+安装程序会在替换文件前静默关闭守护程序，不再要求用户确认。无论全新安装还是
+升级，完成页面都会提供默认勾选的 SurfPanel 启动选项。
 
 ## Palette 外观
 

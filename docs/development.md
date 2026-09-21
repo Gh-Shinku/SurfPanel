@@ -27,10 +27,9 @@ Setup 6 location by default; set `SURFPANEL_ISCC` to the full path of
 `ISCC.exe` when it is installed elsewhere.
 
 The installer performs in-place upgrades using the stable Inno Setup `AppId`.
-If SurfPanel is running, Windows Restart Manager lists it on the Preparing to
-Install page and offers to close it automatically before files are replaced.
-After an upgrade, Restart Manager starts the updated daemon again; on a fresh
-install, the Finish page offers to launch it.
+If SurfPanel is running, Setup closes the daemon silently before replacing its
+files. After both a fresh install and an upgrade, the Finish page offers to
+launch SurfPanel, with the option selected by default.
 
 ## Palette Appearance
 
