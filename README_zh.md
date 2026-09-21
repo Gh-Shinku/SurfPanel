@@ -21,8 +21,6 @@ SurfPanel 是一个常驻系统托盘的轻量级桌面命令面板。
 
 ![SurfPanel 深色主题](assets/SurfPanel-dark.png)
 
-![SurfPanel 托盘菜单](assets/tray.png)
-
 </details>
 
 ## 快速开始

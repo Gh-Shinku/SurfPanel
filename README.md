@@ -23,8 +23,6 @@ with the desktop background on supported Windows versions.
 
 ![SurfPanel dark theme](assets/SurfPanel-dark.png)
 
-![SurfPanel tray menu](assets/tray.png)
-
 </details>
 
 ## Getting Started
