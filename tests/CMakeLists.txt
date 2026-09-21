@@ -1,43 +1,38 @@
-add_executable(test_config test_config.cpp)
-target_link_libraries(test_config PRIVATE SurfPanel::Core)
+function(add_surfpanel_test target source)
+  add_executable(${target} ${source})
+  target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(${target} PRIVATE ${ARGN})
+  add_test(NAME ${target} COMMAND ${target})
+endfunction()
 
-add_executable(test_config_watcher test_config_watcher.cpp)
-target_link_libraries(test_config_watcher PRIVATE SurfPanel::Core)
-
-add_executable(test_clipboard_filter test_clipboard_filter.cpp)
-target_link_libraries(test_clipboard_filter
-  PRIVATE
+add_surfpanel_test(test_config
+  core/config/test_config.cpp
+  SurfPanel::Core)
+add_surfpanel_test(test_config_watcher
+  core/config/test_config_watcher.cpp
+  SurfPanel::Core)
+add_surfpanel_test(test_clipboard_filter
+  plugins/clipboard_filter/test_clipboard_filter.cpp
   Qt6::Gui
-  SurfPanel::ClipboardPlugin
-)
-
-add_executable(test_plugin_manager test_plugin_manager.cpp)
-target_link_libraries(test_plugin_manager PRIVATE SurfPanel::PluginRuntime)
-
-add_executable(test_search_engine test_search_engine.cpp)
-target_link_libraries(test_search_engine PRIVATE SurfPanel::Core)
-
-add_executable(test_action_manager test_action_manager.cpp)
-target_link_libraries(test_action_manager PRIVATE SurfPanel::Core)
-
-add_executable(test_variable_resolver test_variable_resolver.cpp)
-target_link_libraries(test_variable_resolver PRIVATE SurfPanel::Core)
-
-add_executable(test_recent_items_store test_recent_items_store.cpp)
-target_link_libraries(test_recent_items_store PRIVATE SurfPanel::Core)
-
-add_executable(test_mainwindow test_mainwindow.cpp)
-target_link_libraries(test_mainwindow PRIVATE SurfPanel::Ui)
-
-add_test(NAME test_config COMMAND test_config)
-add_test(NAME test_config_watcher COMMAND test_config_watcher)
-add_test(NAME test_clipboard_filter COMMAND test_clipboard_filter)
-add_test(NAME test_plugin_manager COMMAND test_plugin_manager)
-add_test(NAME test_search_engine COMMAND test_search_engine)
-add_test(NAME test_action_manager COMMAND test_action_manager)
-add_test(NAME test_variable_resolver COMMAND test_variable_resolver)
-add_test(NAME test_recent_items_store COMMAND test_recent_items_store)
-add_test(NAME test_mainwindow COMMAND test_mainwindow)
+  SurfPanel::ClipboardPlugin)
+add_surfpanel_test(test_plugin_manager
+  plugins/host/test_plugin_manager.cpp
+  SurfPanel::PluginRuntime)
+add_surfpanel_test(test_search_engine
+  core/search/test_search_engine.cpp
+  SurfPanel::Core)
+add_surfpanel_test(test_action_manager
+  core/action/test_action_manager.cpp
+  SurfPanel::Core)
+add_surfpanel_test(test_variable_resolver
+  core/action/test_variable_resolver.cpp
+  SurfPanel::Core)
+add_surfpanel_test(test_recent_items_store
+  core/storage/test_recent_items_store.cpp
+  SurfPanel::Core)
+add_surfpanel_test(test_mainwindow
+  ui/window/test_mainwindow.cpp
+  SurfPanel::Ui)
 
 if(WIN32)
   get_filename_component(QT_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)

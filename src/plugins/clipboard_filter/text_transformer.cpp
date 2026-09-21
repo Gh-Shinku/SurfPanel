@@ -1,4 +1,4 @@
-#include "text_transformer.h"
+#include "plugins/clipboard_filter/text_transformer.h"
 
 #include <QChar>
 #include <QStringList>

@@ -20,17 +20,29 @@
   `Q_OS_WIN`.
 - Use C++17 and Qt value types. Keep UI, platform integration, and business
   logic separated.
+- Keep production code inside the established `src/app`, `src/core`,
+  `src/platform`, `src/plugins`, and `src/ui` modules. Do not add source files
+  directly under `src/`.
+- Include project headers by their full path relative to `src`, such as
+  `core/search/item.h`. Keep dependency flow toward lower layers: app may use
+  UI, UI may use core/platform/plugin services, and core must not depend on UI
+  or concrete plugins.
+- Use lowercase snake_case for new source directories and filenames. Keep
+  tests in the matching module below `tests/`; shared test-only code belongs in
+  `tests/support/`. Run `make check-layout` after structural changes.
 - Run the repository's clang-format configuration on edited C++ files.
 - Add or update focused tests under `tests/` for behavior changes. Do not commit
   generated `build/`, `Output/`, cache, or local configuration artifacts.
 
 ## Plugin conventions
 
-- Treat built-in plugins as first-class modules under `src/plugins/<plugin-id>/`.
-  IDs must be stable lowercase ASCII names containing only letters, digits, and
-  hyphens.
-- Implement `IPlugin`, register through `src/plugin/builtin_plugins.cpp`, and
-  keep plugin-specific configuration in `config/plugins/<plugin-id>.toml`.
+- Treat built-in plugins as first-class modules under
+  `src/plugins/<module_name>/`. Module directories use lowercase snake_case;
+  runtime IDs remain stable lowercase ASCII names containing only letters,
+  digits, and hyphens.
+- Implement `IPlugin` from `src/plugins/api/plugin.h`, register through
+  `src/plugins/host/builtin_plugins.cpp`, and keep plugin-specific
+  configuration in `config/plugins/<plugin-id>.toml`.
 - Keep plugin lifecycle methods idempotent. A plugin must release native
   resources and invalidate pending asynchronous work in `stop()`.
 - Use `PluginHostContext` for host services and native-event delivery. Do not

@@ -217,10 +217,11 @@ calls show a tray notification and are not added to recently used items.
 
 ### Plugin Architecture
 
-Built-in plugins implement the versioned interface under `src/plugin/`, are
-registered in the built-in registry, and are managed uniformly for
+Built-in plugins implement the versioned interface under `src/plugins/api/`,
+are registered through `src/plugins/host/`, and are managed uniformly for
 configuration, startup, shutdown, logging, and native events. Plugin
-implementations live under `src/plugins/<plugin-id>/`. SurfPanel does not load
+implementations live under `src/plugins/<module_name>/`; source directories use
+snake_case while runtime plugin IDs remain kebab-case. SurfPanel does not load
 third-party DLLs, so the plugin boundary stays type-safe and avoids a public
 binary ABI while the extension model evolves.
 

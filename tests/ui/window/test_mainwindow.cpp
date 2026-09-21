@@ -1,0 +1,932 @@
+#include "core/search/item.h"
+#include "core/storage/app_paths.h"
+#include "core/storage/atomic_file.h"
+#include "core/storage/recent_items_store.h"
+#include "support/test_harness.h"
+#include "ui/palette/fluent_panel.h"
+#include "ui/palette/palette_geometry.h"
+#include "ui/palette/palette_theme.h"
+#include "ui/palette/search_result_view.h"
+#include "ui/tray/tray_menu.h"
+#include "ui/window/about_dialog.h"
+#include "ui/window/mainwindow.h"
+
+#include <QAbstractItemModel>
+#include <QAction>
+#include <QApplication>
+#include <QClipboard>
+#include <QCoreApplication>
+#include <QDir>
+#include <QElapsedTimer>
+#include <QFontMetrics>
+#include <QKeyEvent>
+#include <QLabel>
+#include <QLineEdit>
+#include <QListView>
+#include <QMenu>
+#include <QMetaObject>
+#include <QPainter>
+#include <QPropertyAnimation>
+#include <QScreen>
+#include <QSignalBlocker>
+#include <QStandardPaths>
+#include <QStyleHints>
+#include <QSystemTrayIcon>
+#include <QTemporaryDir>
+#include <QThread>
+
+#include <filesystem>
+#include <vector>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
+namespace fs = std::filesystem;
+
+namespace {
+
+void ResetRecentCache() { fs::remove(DefaultRecentItemsPath()); }
+
+void WriteRecentCache(const std::vector<RecentItemKey> &items) {
+  RecentItemsStore store(DefaultRecentItemsPath());
+  ASSERT_TRUE(store.save(items));
+}
+
+std::vector<StringItem> MakeRankedItems(int count) {
+  std::vector<StringItem> items;
+  items.reserve(static_cast<std::size_t>(count));
+
+  for (int i = 0; i < count; ++i) {
+    StringItem item;
+    item.name = QString("Git Tool %1").arg(i);
+    item.type = "url";
+    item.keywords = {"git", "tool"};
+    item.payload = UrlPayload{QString("https://example.com/%1").arg(i)};
+    items.push_back(item);
+  }
+
+  return items;
+}
+
+StringItem MakeSnippetItem(const QString &name, const QString &snippet) {
+  StringItem item;
+  item.name = name;
+  item.type = "snippet";
+  item.keywords = {name.toLower()};
+  item.payload = SnippetPayload{snippet};
+  return item;
+}
+
+} // namespace
+
+TEST(MainWindowTest, StartsHiddenFramelessAndOnTop) {
+  ResetRecentCache();
+  MainWindow window(nullptr, false);
+
+  ASSERT_TRUE(!window.isVisible());
+  ASSERT_TRUE((window.windowFlags() & Qt::FramelessWindowHint) ||
+              window.property("nativeFrame").toBool());
+  ASSERT_TRUE(window.windowFlags() & Qt::WindowStaysOnTopHint);
+}
+
+TEST(MainWindowTest, TrayMenuUsesLightDesktopAppearance) {
+  MainWindow window(nullptr, false);
+  auto *menu = window.findChild<QMenu *>("trayMenu");
+  if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+    ASSERT_EQ(nullptr, menu);
+    return;
+  }
+  ASSERT_NE(nullptr, menu);
+  ASSERT_EQ(QString("Show Panel"), menu->defaultAction()->text());
+  ASSERT_TRUE(menu->actions()[2]->isSeparator());
+  ASSERT_TRUE(menu->actions()[3]->isCheckable());
+  bool hasAboutAction = false;
+  for (auto *action : menu->actions()) {
+    ASSERT_TRUE(action->text() != "Reload Config");
+    hasAboutAction = hasAboutAction || action->text() == "About SurfPanel";
+  }
+  ASSERT_TRUE(hasAboutAction);
+  ASSERT_TRUE(menu->styleSheet().contains(
+      window.property("darkMode").toBool() ? "#F1F1F1" : "#F9F9F9"));
+  ASSERT_TRUE(menu->styleSheet().contains("border-radius: 4px"));
+  ASSERT_TRUE(!menu->styleSheet().contains("font-size:"));
+  ASSERT_TRUE(menu->font().pointSizeF() > 0);
+  const QString directory = qEnvironmentVariable("SURFPANEL_UI_CAPTURE_DIR");
+  if (!directory.isEmpty()) {
+    QDir().mkpath(directory);
+    menu->popup(QGuiApplication::primaryScreen()->availableGeometry().center());
+    QCoreApplication::processEvents();
+    const bool saved = menu->grab().save(directory + "/tray.png");
+    auto *startup = menu->actions()[3];
+    const bool previousChecked = startup->isChecked();
+    bool checkedSaved = false;
+    {
+      // Preview the check without changing the user's startup registry setting.
+      QSignalBlocker blocker(startup);
+      startup->setChecked(true);
+      QCoreApplication::processEvents();
+      checkedSaved = menu->grab().save(directory + "/tray-checked.png");
+      startup->setChecked(previousChecked);
+    }
+    menu->hide();
+    ASSERT_TRUE(saved);
+    ASSERT_TRUE(checkedSaved);
+  }
+}
+
+TEST(MainWindowTest, AboutDialogShowsBuildAndOpenSourceInformation) {
+  AboutDialog dialog;
+
+  auto *content = dialog.findChild<QWidget *>("aboutContent");
+
+  ASSERT_NE(nullptr, content);
+  ASSERT_TRUE(
+      content->property("versionText").toString().contains(SURFPANEL_VERSION));
+  ASSERT_TRUE(content->property("buildText").toString().contains("Qt"));
+  ASSERT_TRUE(content->property("githubUrl")
+                  .toString()
+                  .contains("github.com/Gh-Shinku/SurfPanel"));
+  ASSERT_TRUE(
+      content->property("openSourceText").toString().contains("toml11"));
+  ASSERT_TRUE(
+      content->property("openSourceText").toString().contains("Inno Setup"));
+  ASSERT_TRUE(content->property("licenseText")
+                  .toString()
+                  .contains("GNU Lesser General Public License"));
+  ASSERT_EQ(QString("QPainter"), content->property("renderingMode").toString());
+  ASSERT_EQ(14, content->property("bodyPixelSize").toInt());
+
+  dialog.setDarkMode(false);
+  ASSERT_TRUE(dialog.styleSheet().contains("#1F1F1F"));
+  dialog.setDarkMode(true);
+  ASSERT_TRUE(dialog.styleSheet().contains("#F5F5F5"));
+
+  const QString directory = qEnvironmentVariable("SURFPANEL_UI_CAPTURE_DIR");
+  if (!directory.isEmpty()) {
+    QDir().mkpath(directory);
+    for (bool dark : {false, true}) {
+      dialog.setDarkMode(dark);
+      dialog.show();
+      QCoreApplication::processEvents();
+      ASSERT_TRUE(dialog.grab().save(
+          directory + (dark ? "/about-dark.png" : "/about-light.png")));
+    }
+    dialog.close();
+  }
+}
+
+TEST(MainWindowTest, TrayAboutActionOpensDialog) {
+  MainWindow window(nullptr, false);
+  auto *menu = window.findChild<QMenu *>("trayMenu");
+  if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+    ASSERT_EQ(nullptr, menu);
+    return;
+  }
+
+  QAction *aboutAction = nullptr;
+  for (QAction *action : menu->actions()) {
+    if (action->text() == "About SurfPanel") {
+      aboutAction = action;
+      break;
+    }
+  }
+  ASSERT_NE(nullptr, aboutAction);
+
+  aboutAction->trigger();
+  QCoreApplication::processEvents();
+
+  auto *dialog = window.findChild<QDialog *>("aboutDialog");
+  ASSERT_NE(nullptr, dialog);
+  ASSERT_TRUE(dialog->isVisible());
+  dialog->close();
+}
+
+TEST(MainWindowTest, PaletteContrastSurvivesExtremeBackdrops) {
+  for (bool dark : {false, true}) {
+    const auto colors = ColorsForPalette(dark);
+    ASSERT_TRUE(colors.nativeTint.alpha() > 0 &&
+                colors.nativeTint.alpha() < 255);
+    ASSERT_TRUE(CompositePaletteColor(colors.nativeTint, Qt::white) !=
+                CompositePaletteColor(colors.nativeTint, Qt::black));
+    for (const QColor backdrop :
+         {QColor(Qt::white), QColor(Qt::black), QColor(Qt::red),
+          QColor(Qt::green), QColor(Qt::blue)}) {
+      const QColor base = CompositePaletteColor(colors.nativeTint, backdrop);
+      for (const QColor surface :
+           {base, CompositePaletteColor(colors.selectedRow, base),
+            CompositePaletteColor(colors.hoveredRow, base),
+            CompositePaletteColor(colors.inputSurface, base)}) {
+        ASSERT_TRUE(PaletteContrast(colors.text, surface) >= 4.5);
+        ASSERT_TRUE(PaletteContrast(colors.secondary, surface) >= 4.5);
+        ASSERT_TRUE(PaletteContrast(colors.icon, surface) >= 3.0);
+      }
+      for (const QColor accent :
+           {QColor(Qt::black), QColor(Qt::white), QColor("#005FB8"),
+            QColor("#808080"), QColor(Qt::red), QColor(Qt::green)}) {
+        const auto marker = ReadablePaletteAccent(accent, dark);
+        ASSERT_TRUE(
+            PaletteContrast(marker, CompositePaletteColor(colors.selectedRow,
+                                                          base)) >= 3.0);
+        ASSERT_TRUE(
+            PaletteContrast(marker, CompositePaletteColor(colors.inputSurface,
+                                                          base)) >= 3.0);
+        ASSERT_TRUE(std::max(PaletteContrast(Qt::black, marker),
+                             PaletteContrast(Qt::white, marker)) >= 4.5);
+      }
+    }
+  }
+}
+
+TEST(MainWindowTest, OptionalContrastBackdropCapture) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+  const QString directory = qEnvironmentVariable("SURFPANEL_UI_CAPTURE_DIR");
+  if (directory.isEmpty()) {
+    return;
+  }
+  QDir().mkpath(directory);
+  for (bool dark : {false, true}) {
+    QGuiApplication::styleHints()->setColorScheme(
+        dark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
+    ResetRecentCache();
+    MainWindow window(nullptr, false);
+    auto items = MakeRankedItems(3);
+    items[0].name = "GitHub";
+    items[1].name = "Filter Clipboard";
+    items[1].type = "plugin";
+    items[2].name = "Today's Date";
+    items[2].type = "snippet";
+    window.setItems(items);
+    auto *input = window.findChild<QLineEdit *>("searchInput");
+    input->setText("git");
+    ASSERT_EQ(ColorsForPalette(dark).secondary,
+              input->palette().color(QPalette::PlaceholderText));
+    auto *panel =
+        static_cast<FluentPanel *>(window.findChild<QWidget *>("panel"));
+    // Simulate the worst-case post-DWM backdrop without capturing the desktop.
+    panel->setThemeColors(ColorsForPalette(dark).nativeTint, Qt::transparent,
+                          dark);
+    for (bool white : {false, true}) {
+      QImage preview(window.size(), QImage::Format_ARGB32_Premultiplied);
+      preview.fill(white ? Qt::white : Qt::black);
+      QPainter painter(&preview);
+      window.render(&painter);
+      painter.end();
+      ASSERT_TRUE(preview.save(directory + (dark ? "/dark-on-" : "/light-on-") +
+                               (white ? "white.png" : "black.png")));
+    }
+  }
+  QGuiApplication::styleHints()->unsetColorScheme();
+#endif
+}
+
+TEST(MainWindowTest, CompactTrayCheckmarksRenderInBothThemes) {
+  TrayMenu menu;
+  menu.addAction("Open");
+  auto *checkable = menu.addAction("Start with Windows");
+  checkable->setCheckable(true);
+  menu.ensurePolished();
+  menu.resize(menu.sizeHint());
+  const QRect row = menu.actionGeometry(checkable);
+  ASSERT_TRUE(row.height() <= QFontMetrics(menu.font()).height() + 8);
+  for (bool dark : {false, true}) {
+    menu.setDarkMode(dark);
+    checkable->setChecked(false);
+    const auto unchecked = menu.grab();
+    checkable->setChecked(true);
+    const auto checked = menu.grab();
+    ASSERT_EQ(unchecked.size(), checked.size());
+    const qreal scale = checked.devicePixelRatioF();
+    const QRect indicator(qRound((row.left() + 4) * scale),
+                          qRound(row.top() * scale), qRound(20 * scale),
+                          qRound(row.height() * scale));
+    ASSERT_TRUE(unchecked.toImage().copy(indicator) !=
+                checked.toImage().copy(indicator));
+    const QString directory = qEnvironmentVariable("SURFPANEL_UI_CAPTURE_DIR");
+    if (!directory.isEmpty()) {
+      QDir().mkpath(directory);
+      ASSERT_TRUE(checked.save(directory + (dark ? "/tray-dark-checked.png"
+                                                 : "/tray-light-checked.png")));
+    }
+  }
+}
+
+TEST(MainWindowTest, SearchProportionsAndNativeFrameStayLightweight) {
+  MainWindow window(nullptr, false);
+  auto *input = window.findChild<QLineEdit *>("searchInput");
+  ASSERT_EQ(44, input->height());
+  ASSERT_EQ(nullptr, window.findChild<QWidget *>("panel")->graphicsEffect());
+#ifdef Q_OS_WIN
+  if (window.property("nativeBackdrop").toBool()) {
+    window.show();
+    QCoreApplication::processEvents();
+    ASSERT_TRUE(!(
+        GetWindowLongPtr(reinterpret_cast<HWND>(window.winId()), GWL_EXSTYLE) &
+        WS_EX_LAYERED));
+    window.hide();
+  }
+#endif
+}
+
+TEST(MainWindowTest, TextChangedQueriesSearchAndAppliesTopK) {
+  ResetRecentCache();
+  MainWindow window(nullptr, false);
+  window.setItems(MakeRankedItems(8));
+
+  QLineEdit *input = window.findChild<QLineEdit *>("searchInput");
+  QListView *list = window.findChild<QListView *>("resultsList");
+
+  ASSERT_NE(nullptr, input);
+  ASSERT_NE(nullptr, list);
+
+  input->setText("git");
+  QCoreApplication::processEvents();
+
+  ASSERT_EQ(6, list->model()->rowCount());
+  ASSERT_EQ(QString("Git Tool 0"),
+            list->model()->index(0, 0).data(Qt::DisplayRole).toString());
+
+  input->clear();
+  QCoreApplication::processEvents();
+  ASSERT_EQ(0, list->model()->rowCount());
+}
+
+TEST(MainWindowTest, ResultCountControlsHeightAndEmptyState) {
+  ResetRecentCache();
+  MainWindow window(nullptr, false);
+  window.setItems(MakeRankedItems(1));
+  auto *input = window.findChild<QLineEdit *>("searchInput");
+  auto *label = window.findChild<QLabel *>("emptyState");
+  ASSERT_EQ(128, window.height());
+  ASSERT_EQ(QString("Type to search actions"), label->text());
+  input->setText("missing");
+  ASSERT_EQ(128, window.height());
+  ASSERT_EQ(QString("No results"), label->text());
+  input->setText("git");
+  ASSERT_EQ(128, window.height());
+  window.setItems(MakeRankedItems(6));
+  ASSERT_EQ(348, window.height());
+  ASSERT_EQ(660, window.width());
+  window.setItems(MakeRankedItems(2));
+  ASSERT_EQ(172, window.height());
+}
+
+TEST(MainWindowTest, VisibleSearchTransitionsShrinkEmptyState) {
+  for (bool native : {true, false}) {
+    ResetRecentCache();
+    MainWindow window(nullptr, false, native);
+    window.setItems(MakeRankedItems(6));
+    auto *input = window.findChild<QLineEdit *>("searchInput");
+    auto *label = window.findChild<QLabel *>("emptyState");
+    window.show();
+    for (const QString query :
+         {QString("git"), QString("missing"), QString("git"), QString("")}) {
+      input->setText(query);
+      QCoreApplication::processEvents();
+      ASSERT_EQ(query == "git" ? 348 : 128, window.height());
+      ASSERT_EQ(12, input->mapTo(&window, QPoint()).y());
+      if (query != "git") {
+        ASSERT_EQ(44, label->height());
+        ASSERT_TRUE(label->isVisible());
+      }
+    }
+    window.hide();
+    input->setText("git");
+    QCoreApplication::processEvents();
+    input->clear();
+    window.show();
+    QCoreApplication::processEvents();
+    ASSERT_EQ(128, window.height());
+  }
+}
+
+TEST(MainWindowTest, PaletteGeometryHandlesNegativeAndSmallScreens) {
+  const QRect available(-1920, -200, 1920, 1080);
+  const auto one = PaletteGeometry(available, 1);
+  const auto six = PaletteGeometry(available, 128);
+  ASSERT_EQ(one.y(), six.y());
+  ASSERT_TRUE(available.contains(six));
+  ASSERT_EQ(660, six.width());
+  const QRect small(0, 0, 500, 300);
+  ASSERT_TRUE(small.contains(PaletteGeometry(small, 128)));
+  ASSERT_EQ(260, PaletteGeometry(small, 128).height());
+}
+
+TEST(MainWindowTest, ForcedFallbackAndTypeLabelsAreAvailable) {
+  MainWindow window(nullptr, false, false);
+  ASSERT_TRUE(!window.property("nativeBackdrop").toBool());
+  ASSERT_TRUE(window.windowFlags() & Qt::FramelessWindowHint);
+  SearchResultListModel model;
+  auto items = MakeRankedItems(1);
+  model.setResults({&items[0]});
+  ASSERT_EQ(
+      QString("Link"),
+      model.index(0, 0).data(SearchResultListModel::TypeLabelRole).toString());
+  items[0].type = "plugin";
+  ASSERT_EQ(
+      QString("Plugin"),
+      model.index(0, 0).data(SearchResultListModel::TypeLabelRole).toString());
+  items[0].type = "snippet";
+  ASSERT_EQ(
+      QString("Snippet"),
+      model.index(0, 0).data(SearchResultListModel::TypeLabelRole).toString());
+}
+
+TEST(MainWindowTest, OptionalVisualCapture) {
+  const QString directory = qEnvironmentVariable("SURFPANEL_UI_CAPTURE_DIR");
+  if (directory.isEmpty()) {
+    return;
+  }
+  QDir().mkpath(directory);
+  for (bool dark : {false, true}) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    QGuiApplication::styleHints()->setColorScheme(
+        dark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
+#endif
+    for (bool native : {true, false}) {
+      ResetRecentCache();
+      MainWindow window(nullptr, false, native);
+      auto items = MakeRankedItems(6);
+      items[0].name = "Git Tool 0 with a long example action name that should "
+                      "be elided without "
+                      "overlapping its type label";
+      items[1].type = "plugin";
+      items[1].payload = PluginPayload{"clipboard-filter", "filter"};
+      items[2] = MakeSnippetItem("Git Tool 2 snippet", "Example");
+      items[2].keywords = {"git"};
+      window.setItems(items);
+      auto *input = window.findChild<QLineEdit *>("searchInput");
+      for (const QString query :
+           {QString("git"), QString("missing"), QString("git"), QString(""),
+            QString("Git Tool 1")}) {
+        input->setText(query);
+        for (auto *action : window.findChildren<QAction *>()) {
+          if (action->text() == "Show Panel") {
+            action->trigger();
+            break;
+          }
+        }
+        QElapsedTimer timer;
+        timer.start();
+        while (timer.elapsed() < 150) {
+          QCoreApplication::processEvents();
+          QThread::msleep(10);
+        }
+        auto *screen = window.screen();
+        const auto rect = window.geometry();
+        const QString name = QString(dark ? "dark-" : "light-") +
+                             (native ? "native-" : "fallback-") +
+                             (query.isEmpty() ? "home" : query) + ".png";
+        const bool saved =
+            screen
+                ->grabWindow(0, rect.x(), rect.y(), rect.width(), rect.height())
+                .save(directory + "/" + name);
+        ASSERT_TRUE(saved);
+      }
+    }
+  }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+  QGuiApplication::styleHints()->unsetColorScheme();
+#endif
+}
+
+TEST(MainWindowTest, OptionalReadmeVisualCapture) {
+  const QString directory = qEnvironmentVariable("SURFPANEL_UI_CAPTURE_DIR");
+  if (directory.isEmpty()) {
+    return;
+  }
+  QDir().mkpath(directory);
+  for (bool dark : {false, true}) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    QGuiApplication::styleHints()->setColorScheme(
+        dark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
+#endif
+    ResetRecentCache();
+    // Widget capture works without a capturable desktop session. Native DWM
+    // Acrylic is not included by grab(), so export the supported fallback.
+    MainWindow window(nullptr, false, false);
+    auto items = MakeRankedItems(2);
+    items[0].name = "GitHub";
+    items[0].payload = UrlPayload{"https://github.com"};
+    items[1].name = "Qt Documentation";
+    items[1].payload = UrlPayload{"https://doc.qt.io"};
+    StringItem filter;
+    filter.name = "Filter Clipboard";
+    filter.type = "plugin";
+    filter.payload = PluginPayload{"clipboard-filter", "filter"};
+    items.push_back(filter);
+    items.push_back(MakeSnippetItem("Today's Date", "{{date}}"));
+    items.push_back(MakeSnippetItem("Current Time", "{{time}}"));
+    items.push_back(MakeSnippetItem("Meeting Notes", "Notes: "));
+    std::vector<RecentItemKey> recent;
+    for (const auto &item : items) {
+      recent.push_back(RecentKeyForItem(item));
+    }
+    WriteRecentCache(recent);
+    window.setItems(items);
+    for (auto *action : window.findChildren<QAction *>()) {
+      if (action->text() == "Show Panel") {
+        action->trigger();
+        break;
+      }
+    }
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < 150) {
+      QCoreApplication::processEvents();
+      QThread::msleep(10);
+    }
+    ASSERT_TRUE(window.isVisible());
+    const bool saved = window.grab().save(
+        directory + (dark ? "/readme-dark.png" : "/readme-light.png"));
+    window.hide();
+    ResetRecentCache();
+    ASSERT_TRUE(saved);
+  }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+  QGuiApplication::styleHints()->unsetColorScheme();
+#endif
+}
+
+TEST(MainWindowTest, ThemeAndAnimationChangesPreserveWindowIdentity) {
+  ResetRecentCache();
+  MainWindow window(nullptr, false);
+  const WId original = window.winId();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+  for (const auto scheme : {Qt::ColorScheme::Dark, Qt::ColorScheme::Light}) {
+    QGuiApplication::styleHints()->setColorScheme(scheme);
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < 50) {
+      QCoreApplication::processEvents();
+      QThread::msleep(5);
+    }
+    ASSERT_EQ(scheme == Qt::ColorScheme::Dark,
+              window.property("darkMode").toBool());
+    ASSERT_EQ(original, window.winId());
+  }
+  QGuiApplication::styleHints()->unsetColorScheme();
+#endif
+  window.setItems(MakeRankedItems(8));
+  for (auto *action : window.findChildren<QAction *>()) {
+    if (action->text() == "Show Panel") {
+      action->trigger();
+      break;
+    }
+  }
+  auto *animation = window.findChild<QPropertyAnimation *>("showAnimation");
+  ASSERT_EQ(90, animation->duration());
+  auto *input = window.findChild<QLineEdit *>("searchInput");
+  input->setText("git");
+  ASSERT_EQ(QAbstractAnimation::Stopped, animation->state());
+  ASSERT_EQ(original, window.winId());
+  ASSERT_EQ(qreal(1), window.windowOpacity());
+  window.hide();
+}
+
+TEST(MainWindowTest,
+     ConfiguredThemeHotReloadOverridesSystemWithoutReplacingWindow) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+  struct IsolatedProfile {
+    QString previousName = QCoreApplication::applicationName();
+    QTemporaryDir temporary;
+    fs::path root;
+    IsolatedProfile() {
+      QCoreApplication::setApplicationName("SurfPanel-theme-" +
+                                           QDir(temporary.path()).dirName());
+      root = UserConfigRoot();
+    }
+    ~IsolatedProfile() {
+      std::error_code ec;
+      fs::remove_all(root, ec);
+      QCoreApplication::setApplicationName(previousName);
+      QGuiApplication::styleHints()->unsetColorScheme();
+    }
+  } profile;
+  ASSERT_TRUE(InitializeConfigRoot(profile.root));
+  const auto saveTheme = [&](const char *theme) {
+    ASSERT_TRUE(WriteFileAtomically(
+        profile.root / "items.toml",
+        QByteArray("items = []\n[appearance]\ntheme = \"") + theme + "\"\n"));
+  };
+  const auto waitForTheme = [](MainWindow &window, bool dark) {
+    QElapsedTimer timer;
+    timer.start();
+    while (window.property("darkMode").toBool() != dark &&
+           timer.elapsed() < 3000) {
+      QCoreApplication::processEvents();
+      QThread::msleep(5);
+    }
+    ASSERT_EQ(dark, window.property("darkMode").toBool());
+    ASSERT_EQ(ColorsForPalette(dark).secondary,
+              window.findChild<QLineEdit *>("searchInput")
+                  ->palette()
+                  .color(QPalette::PlaceholderText));
+  };
+  QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
+  saveTheme("light");
+  MainWindow window(nullptr, false);
+  const auto id = window.winId();
+  waitForTheme(window, false);
+  saveTheme("dark");
+  QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+  waitForTheme(window, true);
+  if (auto *menu = window.findChild<QMenu *>("trayMenu")) {
+    ASSERT_TRUE(menu->styleSheet().contains("#F1F1F1"));
+  }
+  QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
+  saveTheme("light");
+  waitForTheme(window, false);
+  QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+  saveTheme("system");
+  QElapsedTimer timer;
+  timer.start();
+  while (timer.elapsed() < 500) {
+    QCoreApplication::processEvents();
+    QThread::msleep(5);
+  }
+  QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
+  waitForTheme(window, true);
+  ASSERT_EQ(id, window.winId());
+#endif
+}
+
+TEST(MainWindowTest, PrefixQueryShowsScrollableResultWindow) {
+  ResetRecentCache();
+  MainWindow window(nullptr, false);
+  window.setItems(MakeRankedItems(8));
+
+  QLineEdit *input = window.findChild<QLineEdit *>("searchInput");
+  QListView *list = window.findChild<QListView *>("resultsList");
+
+  ASSERT_NE(nullptr, input);
+  ASSERT_NE(nullptr, list);
+  ASSERT_EQ(Qt::ScrollBarAsNeeded, list->verticalScrollBarPolicy());
+
+  input->setText("u git");
+  QCoreApplication::processEvents();
+
+  ASSERT_EQ(8, list->model()->rowCount());
+}
+
+TEST(MainWindowTest, PrefixQueryIsCappedAtWindowLimit) {
+  ResetRecentCache();
+  MainWindow window(nullptr, false);
+  window.setItems(MakeRankedItems(140));
+
+  QLineEdit *input = window.findChild<QLineEdit *>("searchInput");
+  QListView *list = window.findChild<QListView *>("resultsList");
+
+  ASSERT_NE(nullptr, input);
+  ASSERT_NE(nullptr, list);
+
+  input->setText("u git");
+  QCoreApplication::processEvents();
+
+  ASSERT_EQ(128, list->model()->rowCount());
+}
+
+TEST(MainWindowTest, EmptyQueryShowsRecentItemsFromCache) {
+  ResetRecentCache();
+  WriteRecentCache({RecentItemKey{QString("url"), QString("Git Tool 3")},
+                    RecentItemKey{QString("url"), QString("Git Tool 1")}});
+
+  MainWindow window(nullptr, false);
+  window.setItems(MakeRankedItems(8));
+
+  QLineEdit *input = window.findChild<QLineEdit *>("searchInput");
+  QListView *list = window.findChild<QListView *>("resultsList");
+  ASSERT_NE(nullptr, input);
+  ASSERT_NE(nullptr, list);
+
+  input->clear();
+  QCoreApplication::processEvents();
+
+  ASSERT_EQ(2, list->model()->rowCount());
+  ASSERT_EQ(QString("Git Tool 3"),
+            list->model()->index(0, 0).data(Qt::DisplayRole).toString());
+  ASSERT_EQ(QString("Git Tool 1"),
+            list->model()->index(1, 0).data(Qt::DisplayRole).toString());
+
+  ResetRecentCache();
+}
+
+TEST(MainWindowTest, EmptyQuerySkipsStaleRecentItems) {
+  ResetRecentCache();
+  WriteRecentCache({RecentItemKey{QString("url"), QString("Missing")},
+                    RecentItemKey{QString("url"), QString("Git Tool 2")}});
+
+  MainWindow window(nullptr, false);
+  window.setItems(MakeRankedItems(4));
+
+  QLineEdit *input = window.findChild<QLineEdit *>("searchInput");
+  QListView *list = window.findChild<QListView *>("resultsList");
+  ASSERT_NE(nullptr, input);
+  ASSERT_NE(nullptr, list);
+
+  input->clear();
+  QCoreApplication::processEvents();
+
+  ASSERT_EQ(1, list->model()->rowCount());
+  ASSERT_EQ(QString("Git Tool 2"),
+            list->model()->index(0, 0).data(Qt::DisplayRole).toString());
+
+  ResetRecentCache();
+}
+
+TEST(MainWindowTest, ShowPanelRefreshesEmptyQueryHomepage) {
+  ResetRecentCache();
+
+  MainWindow window(nullptr, false);
+  window.setItems(MakeRankedItems(4));
+
+  QLineEdit *input = window.findChild<QLineEdit *>("searchInput");
+  QListView *list = window.findChild<QListView *>("resultsList");
+  ASSERT_NE(nullptr, input);
+  ASSERT_NE(nullptr, list);
+  ASSERT_EQ(0, list->model()->rowCount());
+
+  WriteRecentCache({RecentItemKey{QString("url"), QString("Git Tool 2")}});
+
+  QAction *showAction = nullptr;
+  for (QAction *action : window.findChildren<QAction *>()) {
+    if (action->text() == QString("Show Panel")) {
+      showAction = action;
+      break;
+    }
+  }
+  ASSERT_NE(nullptr, showAction);
+
+  showAction->trigger();
+  QCoreApplication::processEvents();
+
+  ASSERT_EQ(1, list->model()->rowCount());
+  ASSERT_EQ(QString("Git Tool 2"),
+            list->model()->index(0, 0).data(Qt::DisplayRole).toString());
+
+  ResetRecentCache();
+}
+
+TEST(MainWindowTest, FailedSnippetActivationIsNotRecordedInRecentCache) {
+  ResetRecentCache();
+
+  MainWindow window(nullptr, false);
+  window.setItems({MakeSnippetItem("Today", "{{date}}")});
+
+  QLineEdit *input = window.findChild<QLineEdit *>("searchInput");
+  QListView *list = window.findChild<QListView *>("resultsList");
+  ASSERT_NE(nullptr, input);
+  ASSERT_NE(nullptr, list);
+
+  input->setText("today");
+  QCoreApplication::processEvents();
+  ASSERT_EQ(1, list->model()->rowCount());
+
+  ASSERT_TRUE(
+      QMetaObject::invokeMethod(input, "returnPressed", Qt::DirectConnection));
+  QCoreApplication::processEvents();
+
+  RecentItemsStore store(DefaultRecentItemsPath());
+  const auto recent = store.load();
+  ASSERT_EQ(std::size_t(0), recent.size());
+
+  ResetRecentCache();
+}
+
+#ifdef Q_OS_WIN
+TEST(MainWindowTest, ConfiguredPluginItemFiltersClipboardAndRecordsSuccess) {
+  ResetRecentCache();
+  MainWindow window(nullptr, false);
+  StringItem item;
+  item.name = "My custom filter";
+  item.type = "plugin";
+  item.keywords = {"custom-alias"};
+  item.payload = PluginPayload{"clipboard-filter", "filter"};
+  window.setItems({item});
+  auto *input = window.findChild<QLineEdit *>("searchInput");
+  auto *list = window.findChild<QListView *>("resultsList");
+  input->setText("custom-alias");
+  ASSERT_EQ(1, list->model()->rowCount());
+  ASSERT_EQ(QString("plugin"), list->model()
+                                   ->index(0, 0)
+                                   .data(SearchResultListModel::TypeRole)
+                                   .toString());
+  auto *clipboard = QGuiApplication::clipboard();
+  const auto previous = clipboard->text();
+  clipboard->setText("A copied line\ncontinues here.");
+  QMetaObject::invokeMethod(input, "returnPressed", Qt::DirectConnection);
+  QElapsedTimer timer;
+  timer.start();
+  while (RecentItemsStore(DefaultRecentItemsPath()).load().empty() &&
+         timer.elapsed() < 1000) {
+    QCoreApplication::processEvents();
+    QThread::msleep(10);
+  }
+  const auto actual = clipboard->text();
+  const auto recent = RecentItemsStore(DefaultRecentItemsPath()).load();
+  clipboard->setText(previous);
+  ResetRecentCache();
+  ASSERT_EQ(QString("A copied line continues here."), actual);
+  ASSERT_EQ(std::size_t(1), recent.size());
+  ASSERT_EQ(QString("My custom filter"), recent[0].name);
+  ASSERT_TRUE(!window.isVisible());
+}
+#endif
+
+TEST(MainWindowTest, UnknownPluginFunctionDoesNotRecordRecentUse) {
+  ResetRecentCache();
+  MainWindow window(nullptr, false);
+  StringItem item;
+  item.name = "Unknown function";
+  item.type = "plugin";
+  item.keywords = {"unknown-alias"};
+  item.payload = PluginPayload{"clipboard-filter", "missing"};
+  window.setItems({item});
+  auto *input = window.findChild<QLineEdit *>("searchInput");
+  input->setText("unknown-alias");
+  QMetaObject::invokeMethod(input, "returnPressed", Qt::DirectConnection);
+  QCoreApplication::processEvents();
+  ASSERT_TRUE(RecentItemsStore(DefaultRecentItemsPath()).load().empty());
+  ResetRecentCache();
+}
+
+TEST(MainWindowTest, EscapeShortcutHidesPanel) {
+  ResetRecentCache();
+  WriteRecentCache({RecentItemKey{QString("url"), QString("Git Tool 2")}});
+
+  MainWindow window(nullptr, false);
+  window.setItems(MakeRankedItems(4));
+  window.show();
+
+  QLineEdit *input = window.findChild<QLineEdit *>("searchInput");
+  QListView *list = window.findChild<QListView *>("resultsList");
+  ASSERT_NE(nullptr, input);
+  ASSERT_NE(nullptr, list);
+
+  input->setText("missing item");
+  input->setFocus();
+  QCoreApplication::processEvents();
+  ASSERT_TRUE(window.isVisible());
+  ASSERT_EQ(0, list->model()->rowCount());
+
+  QKeyEvent keyPress(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+  QCoreApplication::sendEvent(input, &keyPress);
+  QKeyEvent keyRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+  QCoreApplication::sendEvent(input, &keyRelease);
+  QCoreApplication::processEvents();
+
+  ASSERT_TRUE(!window.isVisible());
+  ASSERT_TRUE(input->text().isEmpty());
+
+  QAction *showAction = nullptr;
+  for (QAction *action : window.findChildren<QAction *>()) {
+    if (action->text() == QString("Show Panel")) {
+      showAction = action;
+      break;
+    }
+  }
+  ASSERT_NE(nullptr, showAction);
+
+  showAction->trigger();
+  QCoreApplication::processEvents();
+
+  ASSERT_EQ(1, list->model()->rowCount());
+  ASSERT_EQ(QString("Git Tool 2"),
+            list->model()->index(0, 0).data(Qt::DisplayRole).toString());
+
+  ResetRecentCache();
+}
+
+TEST(MainWindowTest, ArrowKeysSwitchPresentedItems) {
+  ResetRecentCache();
+  MainWindow window(nullptr, false);
+  window.setItems(MakeRankedItems(8));
+
+  QLineEdit *input = window.findChild<QLineEdit *>("searchInput");
+  QListView *list = window.findChild<QListView *>("resultsList");
+  ASSERT_NE(nullptr, input);
+  ASSERT_NE(nullptr, list);
+
+  input->setText("git");
+  input->setFocus();
+  QCoreApplication::processEvents();
+
+  ASSERT_EQ(0, list->currentIndex().row());
+
+  QKeyEvent downPress(QEvent::KeyPress, Qt::Key_Down, Qt::NoModifier);
+  QCoreApplication::sendEvent(input, &downPress);
+  QCoreApplication::processEvents();
+  ASSERT_EQ(1, list->currentIndex().row());
+
+  QKeyEvent upPress(QEvent::KeyPress, Qt::Key_Up, Qt::NoModifier);
+  QCoreApplication::sendEvent(input, &upPress);
+  QCoreApplication::processEvents();
+  ASSERT_EQ(0, list->currentIndex().row());
+}
+
+int main(int argc, char *argv[]) {
+  QApplication app(argc, argv);
+  QStandardPaths::setTestModeEnabled(true);
+  ResetRecentCache();
+  return RUN_ALL_TESTS();
+}

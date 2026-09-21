@@ -1,7 +1,7 @@
 #pragma once
 
-#include "plugin/plugin.h"
-#include "text_transformer.h"
+#include "plugins/api/plugin.h"
+#include "plugins/clipboard_filter/text_transformer.h"
 
 #include <QObject>
 #include <memory>

@@ -31,6 +31,18 @@ If SurfPanel is running, Setup closes the daemon silently before replacing its
 files. After both a fresh install and an upgrade, the Finish page offers to
 launch SurfPanel, with the option selected by default.
 
+## Source Layout
+
+Production code is grouped by dependency layer under `src/`: `app` owns the
+executable and resources, `core` owns application logic and storage, `platform`
+isolates native integration, `plugins` contains the API, host, and built-in
+modules, and `ui` contains window, palette, and tray components. Tests mirror
+these modules under `tests/`. Project headers use paths relative to `src`.
+
+Run `make check-layout` after moving or adding files. The check rejects source
+files placed directly in `src/` or `tests/`, unknown top-level modules, the old
+singular `src/plugin/` directory, and non-snake-case plugin module directories.
+
 ## Palette Appearance
 
 On Windows 11 22H2 and later, the palette uses the system Desktop Acrylic

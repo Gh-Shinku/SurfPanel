@@ -1,0 +1,784 @@
+#include "core/config/config.h"
+
+#include "core/storage/app_paths.h"
+#include "core/storage/atomic_file.h"
+#include "toml.hpp"
+#include <QCoreApplication>
+#include <QDebug>
+#include <QString>
+#include <algorithm>
+#include <cstddef>
+#include <filesystem>
+#include <optional>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace fs = std::filesystem;
+
+namespace {
+
+struct ParsedItem {
+  StringItem item;
+  std::string key;
+  bool disabled = false;
+};
+
+struct MainConfig {
+  std::vector<fs::path> imports;
+  std::vector<SearchPrefixRule> searchPrefixes;
+  VariableSettings variableSettings;
+  ThemeMode themeMode = ThemeMode::System;
+};
+
+std::vector<SearchPrefixRule> MakeDefaultSearchPrefixes() {
+  return {
+      SearchPrefixRule{QString("snippet"), QString("s")},
+      SearchPrefixRule{QString("url"), QString("u")},
+  };
+}
+
+std::string NormalizeKeyPart(const std::string &value) {
+  return QString::fromStdString(value).toLower().toStdString();
+}
+
+std::string NormalizeKeyPart(const QString &value) {
+  return value.toLower().toStdString();
+}
+
+fs::path PathFromTomlString(const std::string &value) {
+#ifdef _WIN32
+  return fs::path(QString::fromUtf8(value.c_str()).toStdWString());
+#else
+  return fs::u8path(value);
+#endif
+}
+
+std::string BuildItemKey(const std::string &id, const QString &type,
+                         const QString &name) {
+  if (!id.empty()) {
+    return "id:" + NormalizeKeyPart(id);
+  }
+  return "type:" + NormalizeKeyPart(type) + "|name:" + NormalizeKeyPart(name);
+}
+
+bool HasPrefixConflict(const std::vector<SearchPrefixRule> &rules,
+                       const QString &type, const QString &prefix) {
+  for (const auto &rule : rules) {
+    if (rule.itemType.compare(type, Qt::CaseInsensitive) != 0 &&
+        rule.prefix.compare(prefix, Qt::CaseInsensitive) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void UpsertPrefixRule(std::vector<SearchPrefixRule> *rules, const QString &type,
+                      const QString &prefix) {
+  for (auto &rule : *rules) {
+    if (rule.itemType.compare(type, Qt::CaseInsensitive) == 0) {
+      rule.prefix = prefix;
+      return;
+    }
+  }
+  rules->push_back(SearchPrefixRule{type.toLower(), prefix});
+}
+
+std::vector<QString> ParseKeywords(const toml::value &item) {
+  std::vector<QString> keywords;
+  const auto keywordsValue =
+      toml::find_or(item, "keywords", toml::value{toml::array{}});
+  if (!keywordsValue.is_array()) {
+    throw std::runtime_error("keywords must be an array of strings");
+  }
+
+  for (const auto &kw : keywordsValue.as_array()) {
+    keywords.push_back(QString::fromStdString(kw.as_string()));
+  }
+  return keywords;
+}
+
+ParsedItem ParseItem(const toml::value &entry) {
+  if (!entry.is_table()) {
+    throw std::runtime_error("item entry is not a table");
+  }
+
+  const bool disabled = toml::find_or(entry, "disabled", false);
+  const std::string id = toml::find_or(entry, "id", std::string{});
+  const std::string name = toml::find_or(entry, "name", std::string{});
+  const std::string type = toml::find_or(entry, "type", std::string{});
+
+  ParsedItem parsed;
+  parsed.disabled = disabled;
+  parsed.key = BuildItemKey(id, QString::fromStdString(type),
+                            QString::fromStdString(name));
+
+  if (disabled) {
+    if (id.empty() && (name.empty() || type.empty())) {
+      throw std::runtime_error(
+          "disabled item requires id or both name and type");
+    }
+    return parsed;
+  }
+
+  if (name.empty() || type.empty()) {
+    throw std::runtime_error("item requires name and type");
+  }
+
+  StringItem item;
+  item.name = QString::fromStdString(name);
+  item.type = QString::fromStdString(type).toLower();
+  item.keywords = ParseKeywords(entry);
+
+  const auto &payload = toml::find(entry, "payload");
+  if (item.type == "url") {
+    UrlPayload urlPayload;
+    urlPayload.url =
+        QString::fromStdString(toml::find<std::string>(payload, "url"));
+    item.payload = urlPayload;
+  } else if (item.type == "snippet") {
+    SnippetPayload snippetPayload;
+    snippetPayload.snippet =
+        QString::fromStdString(toml::find<std::string>(payload, "snippet"));
+    item.payload = snippetPayload;
+  } else if (item.type == "plugin") {
+    PluginPayload pluginPayload{
+        QString::fromStdString(toml::find<std::string>(payload, "plugin")),
+        QString::fromStdString(toml::find<std::string>(payload, "function"))};
+    if (pluginPayload.plugin.trimmed().isEmpty() ||
+        pluginPayload.function.trimmed().isEmpty()) {
+      throw std::runtime_error("plugin and function must not be empty");
+    }
+    item.payload = pluginPayload;
+  } else {
+    throw std::runtime_error("Unknown item type: " + item.type.toStdString() +
+                             " for item: " + item.name.toStdString());
+  }
+
+  parsed.item = std::move(item);
+  return parsed;
+}
+
+std::vector<ParsedItem> ParseItemsFile(const fs::path &path) {
+  if (!fs::exists(path)) {
+    throw std::runtime_error("Configuration file not found: " + path.string());
+  }
+
+  try {
+    auto config = toml::parse(path, toml::spec::v(1, 1, 0));
+    const auto tomlItems =
+        toml::find_or(config, "items", toml::value{toml::array{}});
+    if (!tomlItems.is_array()) {
+      throw std::runtime_error("items must be an array");
+    }
+
+    std::vector<ParsedItem> parsed;
+    const auto &itemsArray = tomlItems.as_array();
+    parsed.reserve(itemsArray.size());
+    for (const auto &it : itemsArray) {
+      parsed.push_back(ParseItem(it));
+    }
+
+    return parsed;
+  } catch (const toml::syntax_error &err) {
+    throw std::runtime_error("TOML parse error in " + path.string() + ":\n" +
+                             std::string(err.what()));
+  } catch (const std::runtime_error &) {
+    throw;
+  } catch (const std::exception &e) {
+    throw std::runtime_error("Failed to load config from " + path.string() +
+                             ":\n" + e.what());
+  }
+}
+
+void RebuildIndex(const std::vector<std::string> &keys,
+                  std::unordered_map<std::string, std::size_t> *index) {
+  index->clear();
+  for (std::size_t i = 0; i < keys.size(); ++i) {
+    index->emplace(keys[i], i);
+  }
+}
+
+void ApplyParsedItems(std::vector<StringItem> *items,
+                      std::vector<std::string> *keys,
+                      std::unordered_map<std::string, std::size_t> *index,
+                      const std::vector<ParsedItem> &parsed) {
+  for (const auto &entry : parsed) {
+    if (entry.disabled) {
+      auto it = index->find(entry.key);
+      if (it != index->end()) {
+        const std::size_t target = it->second;
+        items->erase(items->begin() + static_cast<std::ptrdiff_t>(target));
+        keys->erase(keys->begin() + static_cast<std::ptrdiff_t>(target));
+        RebuildIndex(*keys, index);
+      }
+      continue;
+    }
+
+    auto it = index->find(entry.key);
+    if (it != index->end()) {
+      (*items)[it->second] = entry.item;
+      (*keys)[it->second] = entry.key;
+    } else {
+      items->push_back(entry.item);
+      keys->push_back(entry.key);
+      index->emplace(entry.key, items->size() - 1);
+    }
+  }
+}
+
+std::vector<fs::path> ListTomlFiles(const fs::path &dir) {
+  std::vector<fs::path> files;
+  std::error_code ec;
+  if (!fs::exists(dir, ec) || !fs::is_directory(dir, ec)) {
+    return files;
+  }
+
+  for (const auto &entry : fs::directory_iterator(dir, ec)) {
+    if (entry.is_regular_file(ec) && entry.path().extension() == ".toml") {
+      files.push_back(entry.path());
+    }
+  }
+
+  std::sort(files.begin(), files.end());
+  return files;
+}
+
+bool IsPathWithin(const fs::path &path, const fs::path &root) {
+  std::error_code ec;
+  const fs::path relative = fs::relative(path, root, ec);
+  if (ec) {
+    return false;
+  }
+
+  for (const auto &part : relative) {
+    if (part == "..") {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::vector<fs::path> ExpandSourcePath(const fs::path &root,
+                                       const fs::path &source,
+                                       std::vector<std::string> *warnings) {
+  if (source.is_absolute()) {
+    warnings->push_back("Ignoring absolute config import: " + source.string());
+    return {};
+  }
+
+  std::error_code ec;
+  const fs::path canonicalRoot = fs::weakly_canonical(root, ec);
+  if (ec) {
+    warnings->push_back("Unable to resolve config root: " + root.string());
+    return {};
+  }
+
+  const fs::path resolved = fs::weakly_canonical(canonicalRoot / source, ec);
+  if (ec || !IsPathWithin(resolved, canonicalRoot)) {
+    warnings->push_back("Ignoring config import outside root: " +
+                        source.string());
+    return {};
+  }
+
+  if (!fs::exists(resolved, ec)) {
+    warnings->push_back("Missing config source: " + resolved.string());
+    return {};
+  }
+
+  if (fs::is_directory(resolved, ec)) {
+    const auto files = ListTomlFiles(resolved);
+    if (files.empty()) {
+      warnings->push_back("No TOML files found in: " + resolved.string());
+    }
+    return files;
+  }
+
+  return {resolved};
+}
+
+void ApplyDateTimeFormat(const std::string &key, const QString &value,
+                         QString *target, std::vector<std::string> *warnings) {
+  const std::string label = "datetime." + key;
+  QString reason;
+  const FormatCheck check = CheckDateTimeFormat(value, &reason);
+
+  if (check == FormatCheck::Invalid) {
+    warnings->push_back("Ignoring " + label + ": " + reason.toStdString() +
+                        "; keeping the default format");
+    return;
+  }
+  if (check == FormatCheck::Suspect) {
+    warnings->push_back("Suspicious " + label + ": " + reason.toStdString());
+  }
+  *target = value;
+}
+
+void ReadDateTimeSettings(const toml::value &root, VariableSettings *settings,
+                          std::vector<std::string> *warnings) {
+  const auto dateTimeValue =
+      toml::find_or(root, "datetime", toml::value{toml::table{}});
+  if (!dateTimeValue.is_table()) {
+    warnings->push_back(
+        "datetime must be a table; using default datetime formats");
+    return;
+  }
+
+  const auto &table = dateTimeValue.as_table();
+  for (const auto &entry : table) {
+    if (entry.first != "date_format" && entry.first != "time_format" &&
+        entry.first != "datetime_format") {
+      warnings->push_back("Ignoring unknown datetime setting: " + entry.first);
+      continue;
+    }
+    if (!entry.second.is_string()) {
+      warnings->push_back("Ignoring datetime." + entry.first +
+                          ": value must be a string");
+      continue;
+    }
+
+    const QString value = QString::fromStdString(entry.second.as_string());
+    if (entry.first == "date_format") {
+      ApplyDateTimeFormat(entry.first, value, &settings->dateFormat, warnings);
+    } else if (entry.first == "time_format") {
+      ApplyDateTimeFormat(entry.first, value, &settings->timeFormat, warnings);
+    } else {
+      ApplyDateTimeFormat(entry.first, value, &settings->dateTimeFormat,
+                          warnings);
+    }
+  }
+}
+
+void ReadSearchPrefixes(const toml::value &root,
+                        std::vector<SearchPrefixRule> *rules,
+                        std::vector<std::string> *warnings) {
+  const auto searchValue =
+      toml::find_or(root, "search", toml::value{toml::table{}});
+  if (!searchValue.is_table()) {
+    warnings->push_back("search must be a table; using default search config");
+    return;
+  }
+
+  const auto prefixesValue =
+      toml::find_or(searchValue, "prefixes", toml::value{toml::table{}});
+  if (!prefixesValue.is_table()) {
+    warnings->push_back(
+        "search.prefixes must be a table; using default search prefixes");
+    return;
+  }
+
+  for (const auto &entry : prefixesValue.as_table()) {
+    const QString type = QString::fromStdString(entry.first).toLower();
+    if (!entry.second.is_string()) {
+      warnings->push_back("Ignoring search prefix for " + entry.first +
+                          ": value must be a string");
+      continue;
+    }
+
+    const QString prefix = QString::fromStdString(entry.second.as_string());
+    if (prefix.isEmpty()) {
+      warnings->push_back("Ignoring empty search prefix for " + entry.first);
+      continue;
+    }
+    if (prefix.trimmed() != prefix ||
+        std::any_of(prefix.cbegin(), prefix.cend(),
+                    [](QChar c) { return c.isSpace(); })) {
+      warnings->push_back("Ignoring search prefix for " + entry.first +
+                          ": prefixes must not contain whitespace");
+      continue;
+    }
+    if (HasPrefixConflict(*rules, type, prefix)) {
+      warnings->push_back("Ignoring duplicate search prefix '" +
+                          prefix.toStdString() + "' for " + entry.first);
+      continue;
+    }
+
+    UpsertPrefixRule(rules, type, prefix);
+  }
+}
+
+ThemeMode ReadThemeMode(const toml::value &root,
+                        std::vector<std::string> *warnings) {
+  const auto appearance =
+      toml::find_or(root, "appearance", toml::value{toml::table{}});
+  if (appearance.is_table()) {
+    const auto theme =
+        toml::find_or(appearance, "theme", toml::value{"system"});
+    if (theme.is_string()) {
+      if (theme.as_string() == "light") {
+        return ThemeMode::Light;
+      }
+      if (theme.as_string() == "dark") {
+        return ThemeMode::Dark;
+      }
+      if (theme.as_string() == "system") {
+        return ThemeMode::System;
+      }
+    }
+  }
+  warnings->push_back(
+      "appearance.theme must be 'system', 'light', or 'dark' in an appearance "
+      "table; following system theme");
+  return ThemeMode::System;
+}
+
+const char *ThemeModeName(ThemeMode mode) {
+  switch (mode) {
+  case ThemeMode::Light:
+    return "light";
+  case ThemeMode::Dark:
+    return "dark";
+  default:
+    return "system";
+  }
+}
+
+MainConfig ReadMainConfig(const fs::path &mainPath,
+                          std::vector<std::string> *warnings) {
+  auto root = toml::parse(mainPath, toml::spec::v(1, 1, 0));
+  MainConfig config;
+  config.searchPrefixes = MakeDefaultSearchPrefixes();
+
+  const auto importsValue =
+      toml::find_or(root, "imports", toml::value{toml::array{}});
+  if (!importsValue.is_array()) {
+    throw std::runtime_error("imports must be an array of strings");
+  }
+
+  for (const auto &importEntry : importsValue.as_array()) {
+    if (!importEntry.is_string()) {
+      warnings->push_back("Ignoring config import: value must be a string");
+      continue;
+    }
+    config.imports.push_back(PathFromTomlString(importEntry.as_string()));
+  }
+
+  ReadDateTimeSettings(root, &config.variableSettings, warnings);
+  ReadSearchPrefixes(root, &config.searchPrefixes, warnings);
+  config.themeMode = ReadThemeMode(root, warnings);
+
+  return config;
+}
+
+std::string JoinMessages(const std::vector<std::string> &messages) {
+  if (messages.empty()) {
+    return {};
+  }
+
+  std::ostringstream oss;
+  for (std::size_t i = 0; i < messages.size(); ++i) {
+    if (i > 0) {
+      oss << '\n';
+    }
+    oss << messages[i];
+  }
+  return oss.str();
+}
+
+std::optional<fs::path> FindBundledConfigRoot() {
+  const QString appDir = QCoreApplication::applicationDirPath();
+#ifdef _WIN32
+  const fs::path executableDir(appDir.toStdWString());
+#else
+  const fs::path executableDir = fs::u8path(appDir.toUtf8().toStdString());
+#endif
+  const std::vector<fs::path> candidates = {
+      executableDir / "config",
+      executableDir / ".." / "config", // for debug
+  };
+
+  for (const auto &candidate : candidates) {
+    std::error_code ec;
+    if (fs::exists(candidate, ec) && fs::is_directory(candidate, ec)) {
+      return candidate;
+    }
+  }
+
+  return std::nullopt;
+}
+
+bool CopyBundledConfig(const fs::path &source, const fs::path &destination) {
+  std::error_code ec;
+  fs::create_directories(destination, ec);
+  if (ec) {
+    return false;
+  }
+
+  fs::copy(source, destination,
+           fs::copy_options::recursive | fs::copy_options::skip_existing, ec);
+  if (ec) {
+    qWarning() << "Failed to migrate configuration:"
+               << QString::fromUtf8(source.u8string().c_str())
+               << QString::fromStdString(ec.message());
+  } else {
+    qInfo() << "Initialized user configuration from existing app configuration:"
+            << QString::fromUtf8(destination.u8string().c_str());
+  }
+  return !ec;
+}
+
+bool WriteItemsToToml(const fs::path &path,
+                      const std::vector<StringItem> &items,
+                      const VariableSettings &settings, ThemeMode themeMode,
+                      std::string *error) {
+  toml::array itemsArray;
+  for (const auto &item : items) {
+    toml::table itemTable;
+    itemTable["name"] = item.name.toStdString();
+    itemTable["type"] = item.type.toStdString();
+
+    toml::array keywords;
+    for (const auto &kw : item.keywords) {
+      keywords.push_back(kw.toStdString());
+    }
+    itemTable["keywords"] = keywords;
+
+    toml::table payload;
+    if (item.type == "url" &&
+        std::holds_alternative<UrlPayload>(item.payload)) {
+      payload["url"] = std::get<UrlPayload>(item.payload).url.toStdString();
+    } else if (item.type == "snippet" &&
+               std::holds_alternative<SnippetPayload>(item.payload)) {
+      payload["snippet"] =
+          std::get<SnippetPayload>(item.payload).snippet.toStdString();
+    } else if (item.type == "plugin" &&
+               std::holds_alternative<PluginPayload>(item.payload)) {
+      const auto &target = std::get<PluginPayload>(item.payload);
+      payload["plugin"] = target.plugin.toStdString();
+      payload["function"] = target.function.toStdString();
+    } else {
+      continue;
+    }
+    itemTable["payload"] = payload;
+    itemsArray.push_back(itemTable);
+  }
+
+  toml::table root;
+  root["items"] = itemsArray;
+
+  // Keep user overrides usable through the fallback cache as well.
+  toml::table datetimeTable;
+  datetimeTable["date_format"] = settings.dateFormat.toStdString();
+  datetimeTable["time_format"] = settings.timeFormat.toStdString();
+  datetimeTable["datetime_format"] = settings.dateTimeFormat.toStdString();
+  root["datetime"] = datetimeTable;
+  root["appearance"] = toml::table{{"theme", ThemeModeName(themeMode)}};
+
+  if (!WriteFileAtomically(
+          path, QByteArray::fromStdString(toml::format(toml::value(root))))) {
+    if (error != nullptr) {
+      *error = "Failed to write config cache: " + path.string();
+    }
+    return false;
+  }
+
+  return true;
+}
+
+VariableSettings ReadCacheSettings(const fs::path &path, ThemeMode *themeMode,
+                                   std::vector<std::string> *warnings) {
+  VariableSettings settings;
+  try {
+    const auto root = toml::parse(path, toml::spec::v(1, 1, 0));
+    ReadDateTimeSettings(root, &settings, warnings);
+    *themeMode = ReadThemeMode(root, warnings);
+  } catch (const std::exception &) {
+    // Item loading reports the failure; defaults are good enough here.
+  }
+  return settings;
+}
+
+ConfigLoadResult TryLoadFallback(const fs::path &configRoot,
+                                 const std::string &previousMessage) {
+  ConfigLoadResult fallback;
+  fallback.configRoot = configRoot;
+  fallback.searchPrefixes = MakeDefaultSearchPrefixes();
+  fallback.ok = false;
+
+  const std::vector<fs::path> candidates = {
+      configRoot / "cache" / "compiled.toml",
+  };
+
+  for (const auto &candidate : candidates) {
+    if (!fs::exists(candidate)) {
+      continue;
+    }
+    try {
+      fallback.items = loadStringItems(candidate);
+      std::vector<std::string> warnings;
+      fallback.variableSettings =
+          ReadCacheSettings(candidate, &fallback.themeMode, &warnings);
+      fallback.usedFallback = true;
+      fallback.ok = true;
+      fallback.message = "Config load failed; using fallback: " +
+                         candidate.filename().string();
+      for (const auto &warning : warnings) {
+        fallback.message += "\n" + warning;
+      }
+      if (!previousMessage.empty()) {
+        fallback.message += "\n" + previousMessage;
+      }
+      return fallback;
+    } catch (const std::exception &e) {
+      fallback.message = std::string("Fallback config failed: ") + e.what();
+    }
+  }
+
+  if (!previousMessage.empty()) {
+    fallback.message = previousMessage;
+  }
+  return fallback;
+}
+
+} // namespace
+
+std::vector<SearchPrefixRule> DefaultSearchPrefixes() {
+  return MakeDefaultSearchPrefixes();
+}
+
+bool InitializeConfigRoot(const fs::path &configRoot) {
+  std::error_code ec;
+  // Preserve existing directories, including a temporarily missing items.toml.
+  if (fs::exists(configRoot, ec)) {
+    return fs::is_directory(configRoot, ec);
+  }
+  fs::create_directories(configRoot / "plugins", ec);
+  if (ec) {
+    qWarning() << "Failed to create user configuration directory:"
+               << QString::fromUtf8(configRoot.u8string().c_str());
+    return false;
+  }
+  if (!WriteFileAtomically(configRoot / "items.toml",
+                           QByteArray("items = []\n"))) {
+    qWarning() << "Failed to initialize empty user configuration";
+    return false;
+  }
+  qInfo() << "Initialized empty user configuration:"
+          << QString::fromUtf8(configRoot.u8string().c_str());
+  return true;
+}
+
+std::optional<fs::path> FindConfigRoot() {
+  const fs::path userConfig = UserConfigRoot();
+  std::error_code ec;
+  // Migrate legacy executable-adjacent configuration on first user launch.
+  // New installations ship only an empty items.toml; existing user directories
+  // are never copied into, reseeded, or overwritten.
+  if (!fs::exists(userConfig, ec)) {
+    if (const auto bundled = FindBundledConfigRoot()) {
+      return CopyBundledConfig(*bundled, userConfig)
+                 ? std::optional<fs::path>(userConfig)
+                 : std::nullopt;
+    }
+  }
+  return InitializeConfigRoot(userConfig) ? std::optional<fs::path>(userConfig)
+                                          : std::nullopt;
+}
+
+ConfigLoadResult LoadConfigFromRoot(const fs::path &configRoot) {
+  ConfigLoadResult result;
+  result.configRoot = configRoot;
+  result.searchPrefixes = MakeDefaultSearchPrefixes();
+
+  std::vector<std::string> warnings;
+  std::vector<fs::path> sourceEntries;
+  const fs::path mainPath = configRoot / "items.toml";
+
+  if (!fs::exists(mainPath)) {
+    result.ok = false;
+    result.message = "Config file not found: " + mainPath.string();
+    return result;
+  }
+
+  try {
+    const MainConfig mainConfig = ReadMainConfig(mainPath, &warnings);
+    sourceEntries = mainConfig.imports;
+    sourceEntries.emplace_back("items.toml");
+    result.searchPrefixes = mainConfig.searchPrefixes;
+    result.variableSettings = mainConfig.variableSettings;
+    result.themeMode = mainConfig.themeMode;
+  } catch (const toml::syntax_error &err) {
+    result.ok = false;
+    result.message = "TOML parse error in " + mainPath.string() + ":\n" +
+                     std::string(err.what());
+    return result;
+  } catch (const std::exception &e) {
+    result.ok = false;
+    result.message =
+        "Failed to read config: " + mainPath.string() + "\n" + e.what();
+    return result;
+  }
+
+  std::vector<StringItem> mergedItems;
+  std::vector<std::string> mergedKeys;
+  std::unordered_map<std::string, std::size_t> index;
+  int loadedSources = 0;
+
+  for (const auto &entry : sourceEntries) {
+    const auto expanded = ExpandSourcePath(configRoot, entry, &warnings);
+    for (const auto &sourceFile : expanded) {
+      try {
+        const auto parsed = ParseItemsFile(sourceFile);
+        ApplyParsedItems(&mergedItems, &mergedKeys, &index, parsed);
+        ++loadedSources;
+      } catch (const std::exception &e) {
+        warnings.push_back("Failed to load source: " + sourceFile.string() +
+                           "\n" + e.what());
+      }
+    }
+  }
+
+  if (loadedSources == 0) {
+    result.ok = false;
+    result.message = "No config sources loaded. Check items.toml and imports.";
+    return result;
+  }
+
+  result.items = std::move(mergedItems);
+  result.message = JoinMessages(warnings);
+
+  const fs::path cacheDir = configRoot / "cache";
+  std::error_code ec;
+  fs::create_directories(cacheDir, ec);
+
+  const fs::path lastGoodPath = cacheDir / "compiled.toml";
+
+  std::string cacheError;
+  if (!WriteItemsToToml(lastGoodPath, result.items, result.variableSettings,
+                        result.themeMode, &cacheError)) {
+    warnings.push_back(cacheError);
+  }
+
+  result.message = JoinMessages(warnings);
+  return result;
+}
+
+ConfigLoadResult LoadConfigWithFallback(const fs::path &configRoot) {
+  ConfigLoadResult result = LoadConfigFromRoot(configRoot);
+  if (result.ok) {
+    return result;
+  }
+
+  const std::string previousMessage = result.message;
+  return TryLoadFallback(configRoot, previousMessage);
+}
+
+std::vector<StringItem> loadStringItems(const fs::path &path) {
+  const auto parsed = ParseItemsFile(path);
+  std::vector<StringItem> items;
+  items.reserve(parsed.size());
+  for (const auto &entry : parsed) {
+    if (!entry.disabled) {
+      items.push_back(entry.item);
+    }
+  }
+  return items;
+}
+
+void load_config(const fs::path &path) {
+  const auto items = loadStringItems(path);
+  qDebug() << "Successfully loaded" << items.size() << "items from"
+           << QString::fromStdString(path.string());
+}

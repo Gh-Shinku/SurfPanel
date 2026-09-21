@@ -188,10 +188,12 @@ function = "filter"
 
 ### 插件架构
 
-内置插件实现 `src/plugin/` 下带版本号的统一接口，通过内置注册表加入运行时，
-并由插件管理器统一处理配置、启动、停止、日志和原生事件。具体插件位于
-`src/plugins/<plugin-id>/`。SurfPanel 当前不动态加载第三方 DLL，因此扩展模型
-演进期间无需维护公开二进制 ABI，同时保留类型安全的边界。
+内置插件实现 `src/plugins/api/` 下带版本号的统一接口，通过
+`src/plugins/host/` 中的内置注册表加入运行时，并由插件管理器统一处理配置、
+启动、停止、日志和原生事件。具体插件位于 `src/plugins/<module_name>/`；源码
+目录使用 snake_case，运行时插件 ID 继续使用 kebab-case。SurfPanel 当前不动态
+加载第三方 DLL，因此扩展模型演进期间无需维护公开二进制 ABI，同时保留类型
+安全的边界。
 
 ### 实时变量
 

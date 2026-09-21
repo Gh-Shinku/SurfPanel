@@ -1,4 +1,4 @@
-#include "clipboard_filter_plugin.h"
+#include "plugins/clipboard_filter/clipboard_filter_plugin.h"
 
 #include "toml.hpp"
 

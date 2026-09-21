@@ -29,6 +29,17 @@ $env:SURFPANEL_QT_ROOT = "C:\Qt\6.8.0\mingw_64"
 安装程序会在替换文件前静默关闭守护程序，不再要求用户确认。无论全新安装还是
 升级，完成页面都会提供默认勾选的 SurfPanel 启动选项。
 
+## 源码目录
+
+生产代码按依赖层放在 `src/` 下：`app` 管理可执行程序和资源，`core` 管理业务
+逻辑与存储，`platform` 隔离原生平台集成，`plugins` 包含插件 API、宿主和内置
+模块，`ui` 包含窗口、面板与托盘组件。测试在 `tests/` 下镜像这些模块，项目
+头文件统一使用相对于 `src` 的完整路径。
+
+移动或新增文件后运行 `make check-layout`。该检查会拒绝直接放在 `src/` 或
+`tests/` 根目录的源码、未知顶层模块、旧的单数 `src/plugin/` 目录，以及不符合
+snake_case 的插件模块目录。
+
 ## Palette 外观
 
 Windows 11 22H2 及以上使用系统 Desktop Acrylic 背景、小圆角及 DWM 边框/阴影。
