@@ -781,15 +781,22 @@ TEST(MainWindowTest, UnknownPluginFunctionDoesNotRecordRecentUse) {
 
 TEST(MainWindowTest, EscapeShortcutHidesPanel) {
   ResetRecentCache();
+  WriteRecentCache({RecentItemKey{QString("url"), QString("Git Tool 2")}});
+
   MainWindow window(nullptr, false);
+  window.setItems(MakeRankedItems(4));
   window.show();
 
   QLineEdit *input = window.findChild<QLineEdit *>("searchInput");
+  QListView *list = window.findChild<QListView *>("resultsList");
   ASSERT_NE(nullptr, input);
+  ASSERT_NE(nullptr, list);
 
+  input->setText("missing item");
   input->setFocus();
   QCoreApplication::processEvents();
   ASSERT_TRUE(window.isVisible());
+  ASSERT_EQ(0, list->model()->rowCount());
 
   QKeyEvent keyPress(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
   QCoreApplication::sendEvent(input, &keyPress);
@@ -798,6 +805,25 @@ TEST(MainWindowTest, EscapeShortcutHidesPanel) {
   QCoreApplication::processEvents();
 
   ASSERT_TRUE(!window.isVisible());
+  ASSERT_TRUE(input->text().isEmpty());
+
+  QAction *showAction = nullptr;
+  for (QAction *action : window.findChildren<QAction *>()) {
+    if (action->text() == QString("Show Panel")) {
+      showAction = action;
+      break;
+    }
+  }
+  ASSERT_NE(nullptr, showAction);
+
+  showAction->trigger();
+  QCoreApplication::processEvents();
+
+  ASSERT_EQ(1, list->model()->rowCount());
+  ASSERT_EQ(QString("Git Tool 2"),
+            list->model()->index(0, 0).data(Qt::DisplayRole).toString());
+
+  ResetRecentCache();
 }
 
 TEST(MainWindowTest, ArrowKeysSwitchPresentedItems) {

@@ -688,6 +688,7 @@ void MainWindow::hidePanel(bool clearPasteTarget) {
   }
 
   hide();
+  input_->clear();
   if (showAnimation_ &&
       showAnimation_->state() == QAbstractAnimation::Running) {
     showAnimation_->stop();
@@ -970,7 +971,6 @@ void MainWindow::invokeItemAction(const StringItem *item) {
   const RecentItemKey recentKey = RecentKeyForItem(*item);
 
   hidePanel(false);
-  input_->clear();
   resultsModel_->setResults({});
 
   QPointer<MainWindow> guardedThis(this);
