@@ -155,6 +155,15 @@ TEST(ActionManagerTest, InjectActionDoesNotPasteWhenClipboardWriteFails) {
   ASSERT_EQ(0, context.injectCallCount);
 }
 
+#ifdef Q_OS_WIN
+TEST(ActionManagerTest, DefaultContextReportsMissingWindowsPasteTarget) {
+  DefaultActionContext context;
+
+  ASSERT_TRUE(!context.injectIntoActiveInput("content"));
+  ASSERT_TRUE(context.lastError().contains("did not capture a paste target"));
+}
+#endif
+
 TEST(ActionManagerTest, RegisterDefaultActionsAddsBothActions) {
   ActionManager manager;
 

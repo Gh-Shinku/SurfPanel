@@ -683,10 +683,14 @@ void MainWindow::showPanel() {
 }
 
 void MainWindow::hidePanel(bool clearPasteTarget) {
-  if (!isVisible()) {
+  if (!isVisible() || hidingPanel_) {
     return;
   }
 
+  // QWidget::hide() can synchronously deliver WindowDeactivate. Prevent that
+  // event from re-entering hidePanel() with the default argument and clearing
+  // a paste target that an action still needs.
+  hidingPanel_ = true;
   hide();
   input_->clear();
   if (showAnimation_ &&
@@ -700,6 +704,7 @@ void MainWindow::hidePanel(bool clearPasteTarget) {
     actionContext_.clearNativePasteTarget();
   }
 #endif
+  hidingPanel_ = false;
 }
 
 void MainWindow::reloadConfig() {

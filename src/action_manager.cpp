@@ -211,13 +211,14 @@ bool DefaultActionContext::copyToClipboard(const QString &text) {
 
 bool DefaultActionContext::injectIntoActiveInput(const QString &text) {
 #ifdef Q_OS_WIN
-  if (nativePasteTarget_ != nullptr) {
-    // The palette hides before the action runs, so the paste has to go to
-    // whichever window owns the foreground now. The window captured when the
-    // palette opened is only a reference for the log: Windows hands the
-    // foreground back to arbitrary windows (and to the shell when the palette
-    // was opened from the tray), so requiring an exact match would veto
-    // working pastes.
+  if (nativePasteTarget_ == nullptr) {
+    lastError_ =
+        "Text was copied, but SurfPanel did not capture a paste target.";
+    qWarning().noquote() << "Paste target is missing:" << lastError_;
+    return false;
+  }
+
+  {
     const HWND captured = static_cast<HWND>(nativePasteTarget_);
     QString restoreError;
     if (!RestorePasteTarget(captured, &restoreError)) {
@@ -258,8 +259,7 @@ bool DefaultActionContext::injectIntoActiveInput(const QString &text) {
     }
     return true;
   }
-#endif
-
+#else
   QObject *focus = QGuiApplication::focusObject();
   const bool injected = InjectIntoInputObject(focus, text);
   if (!injected) {
@@ -267,6 +267,7 @@ bool DefaultActionContext::injectIntoActiveInput(const QString &text) {
         "Text was copied, but no editable input is available for insertion.";
   }
   return injected;
+#endif
 }
 
 void DefaultActionContext::clearLastError() { lastError_.clear(); }

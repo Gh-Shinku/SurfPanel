@@ -96,6 +96,7 @@ private:
   QPoint showTarget_;
   QColor accentColor_;
   bool isDarkMode_;
+  bool hidingPanel_ = false;
   ThemeMode themeMode_ = ThemeMode::System;
 
   QSystemTrayIcon *trayIcon_;
