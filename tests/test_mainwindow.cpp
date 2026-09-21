@@ -1,3 +1,4 @@
+#include "about_dialog.h"
 #include "app_paths.h"
 #include "atomic_file.h"
 #include "fluent_panel.h"
@@ -100,9 +101,12 @@ TEST(MainWindowTest, TrayMenuUsesLightDesktopAppearance) {
   ASSERT_EQ(QString("Show Panel"), menu->defaultAction()->text());
   ASSERT_TRUE(menu->actions()[2]->isSeparator());
   ASSERT_TRUE(menu->actions()[3]->isCheckable());
+  bool hasAboutAction = false;
   for (auto *action : menu->actions()) {
     ASSERT_TRUE(action->text() != "Reload Config");
+    hasAboutAction = hasAboutAction || action->text() == "About SurfPanel";
   }
+  ASSERT_TRUE(hasAboutAction);
   ASSERT_TRUE(menu->styleSheet().contains(
       window.property("darkMode").toBool() ? "#F1F1F1" : "#F9F9F9"));
   ASSERT_TRUE(menu->styleSheet().contains("border-radius: 4px"));
@@ -129,6 +133,54 @@ TEST(MainWindowTest, TrayMenuUsesLightDesktopAppearance) {
     ASSERT_TRUE(saved);
     ASSERT_TRUE(checkedSaved);
   }
+}
+
+TEST(MainWindowTest, AboutDialogShowsBuildAndOpenSourceInformation) {
+  AboutDialog dialog;
+
+  auto *version = dialog.findChild<QLabel *>("aboutVersion");
+  auto *build = dialog.findChild<QLabel *>("aboutBuild");
+  auto *github = dialog.findChild<QLabel *>("aboutGithub");
+  auto *software = dialog.findChild<QLabel *>("aboutOpenSource");
+  auto *license = dialog.findChild<QLabel *>("aboutLicense");
+
+  ASSERT_NE(nullptr, version);
+  ASSERT_NE(nullptr, build);
+  ASSERT_NE(nullptr, github);
+  ASSERT_NE(nullptr, software);
+  ASSERT_NE(nullptr, license);
+  ASSERT_TRUE(version->text().contains(SURFPANEL_VERSION));
+  ASSERT_TRUE(build->text().contains("Qt"));
+  ASSERT_TRUE(github->text().contains("github.com/shinku/SurfPanel"));
+  ASSERT_TRUE(software->text().contains("toml11"));
+  ASSERT_TRUE(software->text().contains("Inno Setup"));
+  ASSERT_TRUE(license->text().contains("GNU Lesser General Public License"));
+}
+
+TEST(MainWindowTest, TrayAboutActionOpensDialog) {
+  MainWindow window(nullptr, false);
+  auto *menu = window.findChild<QMenu *>("trayMenu");
+  if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+    ASSERT_EQ(nullptr, menu);
+    return;
+  }
+
+  QAction *aboutAction = nullptr;
+  for (QAction *action : menu->actions()) {
+    if (action->text() == "About SurfPanel") {
+      aboutAction = action;
+      break;
+    }
+  }
+  ASSERT_NE(nullptr, aboutAction);
+
+  aboutAction->trigger();
+  QCoreApplication::processEvents();
+
+  auto *dialog = window.findChild<QDialog *>("aboutDialog");
+  ASSERT_NE(nullptr, dialog);
+  ASSERT_TRUE(dialog->isVisible());
+  dialog->close();
 }
 
 TEST(MainWindowTest, PaletteContrastSurvivesExtremeBackdrops) {

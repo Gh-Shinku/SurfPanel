@@ -88,6 +88,8 @@ target_link_libraries(surfpanel_clipboard_plugin
 add_library(SurfPanel::ClipboardPlugin ALIAS surfpanel_clipboard_plugin)
 
 add_library(surfpanel_ui STATIC
+  src/about_dialog.cpp
+  src/about_dialog.h
   src/tray_menu.cpp
   src/tray_menu.h
   src/window_effects.cpp
@@ -106,6 +108,9 @@ add_library(surfpanel_ui STATIC
   src/search_result_view.h
 )
 target_include_directories(surfpanel_ui PUBLIC src)
+target_compile_definitions(surfpanel_ui
+  PUBLIC SURFPANEL_VERSION="${PROJECT_VERSION}"
+)
 target_link_libraries(surfpanel_ui
   PUBLIC
   Qt6::Widgets

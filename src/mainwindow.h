@@ -29,6 +29,7 @@ class QSystemTrayIcon;
 class FluentPanel;
 class SearchResultItemDelegate;
 class SearchResultListModel;
+class AboutDialog;
 struct ConfigLoadResult;
 
 class MainWindow : public QMainWindow {
@@ -104,7 +105,9 @@ private:
   QAction *showPanelAction_;
   QAction *showConfigDirAction_;
   QAction *autoStartAction_;
+  QAction *aboutAction_;
   QAction *exitAction_;
+  AboutDialog *aboutDialog_ = nullptr;
 
   SearchEngine searchEngine_;
   ActionManager actionManager_;

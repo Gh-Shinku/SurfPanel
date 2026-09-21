@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 
+#include "about_dialog.h"
 #include "config.h"
 #include "config_watcher.h"
 #include "fluent_panel.h"
@@ -140,8 +141,8 @@ MainWindow::MainWindow(QWidget *parent, bool enableHotkey,
       accentColor_(QColor("#005FB8")), isDarkMode_(false), trayIcon_(nullptr),
       trayMenu_(nullptr), showPanelAction_(nullptr),
       showConfigDirAction_(nullptr), autoStartAction_(nullptr),
-      exitAction_(nullptr), globalHotkeyRegistered_(false), hotkeyId_(1),
-      fallbackShortcut_(nullptr) {
+      aboutAction_(nullptr), exitAction_(nullptr),
+      globalHotkeyRegistered_(false), hotkeyId_(1), fallbackShortcut_(nullptr) {
   nativeFrame_ = preferNativeBackdrop && SupportsNativeBackdrop();
   RegisterDefaultActions(&actionManager_);
   if (!RegisterBuiltinPlugins(&pluginManager_)) {
@@ -388,6 +389,9 @@ void MainWindow::updateTheme() {
             << "resolved=" << (isDarkMode_ ? "dark" : "light");
     applyStylesheet();
     applyTrayMenuTheme();
+    if (aboutDialog_ != nullptr) {
+      aboutDialog_->setDarkMode(isDarkMode_);
+    }
     static_cast<PaletteSearchInput *>(input_)->setAccentColor(accentColor_);
     const auto colors = ColorsForPalette(isDarkMode_);
     static_cast<PaletteSearchInput *>(input_)->setThemeColors(colors.text,
@@ -495,6 +499,7 @@ void MainWindow::setupTrayIcon() {
   autoStartAction_ = trayMenu_->addAction("Start with Windows");
   autoStartAction_->setCheckable(true);
   trayMenu_->addSeparator();
+  aboutAction_ = trayMenu_->addAction("About SurfPanel");
   exitAction_ = trayMenu_->addAction("Exit");
 
   connect(showPanelAction_, &QAction::triggered, this, &MainWindow::showPanel);
@@ -504,6 +509,15 @@ void MainWindow::setupTrayIcon() {
           &MainWindow::setAutoStartEnabled);
   connect(trayMenu_, &QMenu::aboutToShow, this,
           &MainWindow::syncAutoStartAction);
+  connect(aboutAction_, &QAction::triggered, this, [this]() {
+    if (aboutDialog_ == nullptr) {
+      aboutDialog_ = new AboutDialog(this);
+    }
+    aboutDialog_->setDarkMode(isDarkMode_);
+    aboutDialog_->show();
+    aboutDialog_->raise();
+    aboutDialog_->activateWindow();
+  });
   connect(exitAction_, &QAction::triggered, qApp, &QApplication::quit);
 
   QIcon trayIcon(":/icons/SurfPanel.ico");

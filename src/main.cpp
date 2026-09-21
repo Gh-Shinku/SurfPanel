@@ -26,6 +26,9 @@ void RegisterForInstallerRestart() {
 
 int main(int argc, char *argv[]) {
   QApplication app(argc, argv);
+  QCoreApplication::setApplicationName("SurfPanel");
+  QCoreApplication::setApplicationVersion(SURFPANEL_VERSION);
+  QCoreApplication::setOrganizationName("Shinku");
   InstallFileLogger();
   RegisterForInstallerRestart();
   MainWindow mainWindow;
