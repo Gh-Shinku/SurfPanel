@@ -1,6 +1,8 @@
 #include "core/config/config.h"
 #include "core/search/item.h"
+#include "core/storage/app_paths.h"
 #include "support/test_harness.h"
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <filesystem>
 #include <fstream>
@@ -60,6 +62,19 @@ std::string CaptureRuntimeError(const std::function<void()> &fn) {
 }
 
 } // namespace
+
+TEST(ConfigTest, UsesStableOrganizationIndependentConfigPath) {
+  const QString genericConfig =
+      QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+#ifdef Q_OS_WIN
+  const fs::path expected =
+      fs::path(genericConfig.toStdWString()) / "SurfPanel" / "config";
+#else
+  const fs::path expected =
+      fs::u8path(genericConfig.toUtf8().toStdString()) / "SurfPanel" / "config";
+#endif
+  ASSERT_EQ(expected.lexically_normal(), UserConfigRoot().lexically_normal());
+}
 
 TEST(ConfigTest, ParsesValidToml) {
   const auto path = WriteTomlFile(

@@ -103,52 +103,9 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-function MigrateMissingConfigFiles(SourceDir: string; DestDir: string): Boolean;
-var
-  FindRec: TFindRec;
-  SourcePath: string;
-  DestPath: string;
-begin
-  Result := True;
-  if not DirExists(SourceDir) then
-    exit;
-
-  if not ForceDirectories(DestDir) then begin
-    Log('Unable to create user config directory: ' + DestDir);
-    Result := False;
-    exit;
-  end;
-
-  if FindFirst(AddBackslash(SourceDir) + '*', FindRec) then begin
-    try
-      repeat
-        if (FindRec.Name <> '.') and (FindRec.Name <> '..') then begin
-          SourcePath := AddBackslash(SourceDir) + FindRec.Name;
-          DestPath := AddBackslash(DestDir) + FindRec.Name;
-          if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then begin
-            if not MigrateMissingConfigFiles(SourcePath, DestPath) then
-              Result := False;
-          end else if FileExists(DestPath) then begin
-            Log('Preserving existing user config file: ' + DestPath);
-          end else if not FileCopy(SourcePath, DestPath, True) then begin
-            Log('Unable to migrate legacy config file: ' + SourcePath);
-            Result := False;
-          end else begin
-            Log('Migrated legacy config file: ' + SourcePath + ' -> ' + DestPath);
-          end;
-        end;
-      until not FindNext(FindRec);
-    finally
-      FindClose(FindRec);
-    end;
-  end;
-end;
-
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
-  LegacyConfigDir: string;
   ResultCode: Integer;
-  UserConfigDir: string;
 begin
   { SurfPanel is a background daemon with no unsaved documents. Stop every
     running instance before Restart Manager scans files so upgrades proceed
@@ -156,18 +113,5 @@ begin
   Exec(ExpandConstant('{sys}\taskkill.exe'),
     '/F /IM "{#MyAppExeName}"', '', SW_HIDE, ewWaitUntilTerminated,
     ResultCode);
-
-  { Config is user data and is never installed by Setup. Migrate files from
-    releases that stored config beside the executable, but never replace a
-    file already present in the canonical per-user directory. }
-  LegacyConfigDir := AddBackslash(ExpandConstant('{app}')) + 'config';
-  UserConfigDir := ExpandConstant('{localappdata}\Shinku\SurfPanel\config');
-  if DirExists(LegacyConfigDir) and
-     (not MigrateMissingConfigFiles(LegacyConfigDir, UserConfigDir)) then begin
-    Result := 'Setup could not preserve the existing SurfPanel configuration.' +
-      Chr(13) + Chr(10) +
-      'No application files were changed. Check the Setup log and retry.';
-    exit;
-  end;
   Result := '';
 end;

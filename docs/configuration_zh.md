@@ -8,9 +8,9 @@ SurfPanel 使用单个主 TOML 文件进行日常配置。可选的导入功能�
 
 新安装的 `items.toml` 为空配置（`items = []`），不包含示例条目、导入或已启用插件。
 更多可选示例见 [examples/](examples/README.md)。
-需要时自行添加下方示例。配置位于 Qt 为 SurfPanel 提供的用户级 `AppConfigLocation` 下。
-安装程序不会在该目录中部署或删除任何文件。升级时，可执行文件旁的旧配置仅在
-目标文件不存在时迁移；已经存在的用户配置始终优先，绝不会被覆盖。
+需要时自行添加下方示例。在 Windows 上，配置固定存放于
+`%LOCALAPPDATA%\SurfPanel\config`，不受组织名设置影响。安装程序不会在该目录
+中部署、迁移或删除文件。
 
 ### 目录结构
 

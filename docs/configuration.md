@@ -10,11 +10,9 @@ imports can pull in package files when you want to share or reuse item groups.
 New installations start with an empty `items.toml` (`items = []`), without
 example actions, imports, or enabled plugins. Add the examples below yourself.
 More optional examples are under [examples/](examples/README.md).
-SurfPanel reads and writes its user configuration directory under Qt's per-user
-`AppConfigLocation` for SurfPanel. The installer neither deploys nor removes
-files in this directory. During an upgrade, legacy executable-adjacent config
-files are migrated when their destination is missing; an existing user config
-file always wins and is never overwritten.
+On Windows, SurfPanel reads and writes `%LOCALAPPDATA%\SurfPanel\config`. This
+path is fixed and does not depend on the configured organization name. The
+installer neither deploys, migrates, nor removes files in this directory.
 
 ### Directory Layout
 

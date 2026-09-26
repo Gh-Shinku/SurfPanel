@@ -26,5 +26,6 @@ fs::path AppDataRoot() {
 }
 
 fs::path UserConfigRoot() {
-  return WritableLocation(QStandardPaths::AppConfigLocation) / "config";
+  return WritableLocation(QStandardPaths::GenericConfigLocation) / "SurfPanel" /
+         "config";
 }
